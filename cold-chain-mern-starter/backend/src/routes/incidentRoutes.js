@@ -1,0 +1,14 @@
+import { Router } from "express";
+import { listIncidents, createManualIncident, updateIncident, assignIncident, listAlerts, listAudit, listAssignments } from "../controllers/incidentController.js";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { requireRole } from "../middleware/requireRole.js";
+const router = Router();
+router.use(requireAuth);
+router.get("/", listIncidents);
+router.post("/", requireRole("fleet_manager", "admin", "action_team_member"), createManualIncident);
+router.patch("/:id", requireRole("fleet_manager", "admin", "action_team_member"), updateIncident);
+router.post("/:id/assign", requireRole("fleet_manager", "admin"), assignIncident);
+router.get("/meta/alerts", listAlerts);
+router.get("/meta/audit", listAudit);
+router.get("/meta/assignments", listAssignments);
+export default router;

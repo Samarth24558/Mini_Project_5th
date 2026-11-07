@@ -1,0 +1,28 @@
+{
+  "name": "cold-chain-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed:teams": "node scripts/seedTeams.js",
+    "seed:trucks": "node scripts/seedTrucks.js",
+    "seed:dataset": "node scripts/seedDataset.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@clerk/express": "^1.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5",
+    "resend": "^6.37.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
+  }
+}

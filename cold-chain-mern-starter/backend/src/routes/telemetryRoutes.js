@@ -1,0 +1,13 @@
+import { Router } from "express";
+import { createTelemetry, getTelemetry, getLatestTelemetry, importTelemetry, getTelemetryUploads, simulateUploadedTelemetry } from "../controllers/telemetryController.js";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { requireRole } from "../middleware/requireRole.js";
+const router = Router();
+router.use(requireAuth);
+router.get("/latest", getLatestTelemetry);
+router.get("/uploads", getTelemetryUploads);
+router.get("/", getTelemetry);
+router.post("/", createTelemetry);
+router.post("/import", requireRole("fleet_manager", "admin", "compliance_officer"), importTelemetry);
+router.post("/uploads/:uploadId/simulate", requireRole("fleet_manager", "admin", "compliance_officer"), simulateUploadedTelemetry);
+export default router;
