@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getTeams, createTeam, updateTeam } from "../controllers/teamController.js";
+import { getTeams, createTeam, updateTeam, deleteTeam } from "../controllers/teamController.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 const router = Router();
@@ -7,4 +7,5 @@ router.use(requireAuth);
 router.get("/", getTeams);
 router.post("/", requireRole("fleet_manager", "admin"), createTeam);
 router.patch("/:id", requireRole("fleet_manager", "admin"), updateTeam);
+router.delete("/:id", requireRole("fleet_manager", "admin"), deleteTeam);
 export default router;

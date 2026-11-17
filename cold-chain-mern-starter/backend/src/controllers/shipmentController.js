@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Shipment from "../models/Shipment.js";
 import Truck from "../models/Truck.js";
+import { deleteShipmentBranch, withDeletionTransaction } from "../services/recordDeletion.js";
 
 const shipmentStatuses = ["scheduled", "in_transit", "delayed", "delivered", "cancelled"];
 
@@ -172,13 +173,9 @@ export async function deleteShipment(req, res) {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ success: false, message: "Invalid shipment ID" });
     }
-    const TelemetryRecord = (await import("../models/TelemetryRecord.js")).default;
-    const Incident = (await import("../models/Incident.js")).default;
-    const [hasTelemetry, hasIncidents] = await Promise.all([TelemetryRecord.exists({ shipmentId: req.params.id }), Incident.exists({ shipmentId: req.params.id })]);
-    if (hasTelemetry || hasIncidents) return res.status(409).json({ success: false, message: "Shipment has telemetry or incident history and cannot be deleted. Mark it delivered or cancelled instead." });
-    const shipment = await Shipment.findByIdAndDelete(req.params.id);
-    if (!shipment) return res.status(404).json({ success: false, message: "Shipment not found" });
-    return res.status(200).json({ success: true, message: "Shipment deleted successfully" });
+    const result = await withDeletionTransaction(session => deleteShipmentBranch([req.params.id], session));
+    if (!result.shipments) return res.status(404).json({ success: false, message: "Shipment not found" });
+    return res.status(200).json({ success: true, message: "Shipment and linked operational history deleted", data: result });
   } catch (error) {
     console.error("deleteShipment:", error);
     return res.status(500).json({ success: false, message: "Failed to delete shipment" });

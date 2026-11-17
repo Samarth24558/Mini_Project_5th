@@ -7,10 +7,12 @@ const userSchema = new mongoose.Schema({
   phone: { type: String, trim: true, default: "" },
   role: {
     type: String,
-    enum: ["fleet_manager", "driver", "action_team_member", "compliance_officer", "admin"],
-    default: "driver",
+    enum: ["pending_assignment", "fleet_manager", "driver", "action_team_member", "compliance_officer", "admin"],
+    default: "pending_assignment",
     index: true
   },
+  canRunSimulation: { type: Boolean, default: false },
+  roleAssignmentNotifiedAt: { type: Date, default: null },
   status: { type: String, enum: ["active", "inactive"], default: "active" }
 }, { timestamps: true });
 

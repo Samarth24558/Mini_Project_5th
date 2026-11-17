@@ -1,11 +1,15 @@
 import { Router } from "express";
-import { createTelemetry, getTelemetry, getLatestTelemetry, importTelemetry, getTelemetryUploads, simulateUploadedTelemetry } from "../controllers/telemetryController.js";
+import { createTelemetry, createSimulationFleet, createSimulationTelemetryBatch, deleteTelemetryRecord, deleteTelemetryUpload, getTelemetry, getLatestTelemetry, importTelemetry, getTelemetryUploads, simulateUploadedTelemetry } from "../controllers/telemetryController.js";
 import { requireAuth } from "../middleware/requireAuth.js";
-import { requireRole } from "../middleware/requireRole.js";
+import { requireRole, requireSimulationAccess } from "../middleware/requireRole.js";
 const router = Router();
 router.use(requireAuth);
 router.get("/latest", getLatestTelemetry);
 router.get("/uploads", getTelemetryUploads);
+router.delete("/uploads/:uploadId", requireRole("fleet_manager", "admin", "compliance_officer"), deleteTelemetryUpload);
+router.post("/simulation/fleet", requireSimulationAccess, createSimulationFleet);
+router.post("/simulation/batch", requireSimulationAccess, createSimulationTelemetryBatch);
+router.delete("/:id", requireRole("fleet_manager", "admin", "compliance_officer"), deleteTelemetryRecord);
 router.get("/", getTelemetry);
 router.post("/", createTelemetry);
 router.post("/import", requireRole("fleet_manager", "admin", "compliance_officer"), importTelemetry);

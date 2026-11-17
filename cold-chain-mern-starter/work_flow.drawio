@@ -1,0 +1,217 @@
+<mxfile host="65bd71144e">
+    <diagram id="coldchain-end-to-end" name="ColdChain Ops Workflow">
+        <mxGraphModel dx="325" dy="226" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1350" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#173b3a;" value="ColdChain Ops - End-to-End Workflow" vertex="1">
+                    <mxGeometry height="38" width="650" x="40" y="12" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#526b69;" value="Authentication, fleet operations, telemetry, simulation, incident response, and reporting" vertex="1">
+                    <mxGeometry height="28" width="850" x="40" y="48" as="geometry"/>
+                </mxCell>
+                <mxCell id="section-auth" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=16;fontStyle=1;fontColor=#087e70;" value="1. USER AUTHENTICATION AND ACCESS" vertex="1">
+                    <mxGeometry height="26" width="520" x="40" y="78" as="geometry"/>
+                </mxCell>
+                <mxCell id="section-setup" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=16;fontStyle=1;fontColor=#087e70;" value="2. FLEET, SHIPMENT, TEAM, AND SIMULATOR SETUP" vertex="1">
+                    <mxGeometry height="26" width="700" x="40" y="315" as="geometry"/>
+                </mxCell>
+                <mxCell id="section-inputs" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=16;fontStyle=1;fontColor=#087e70;" value="3. TELEMETRY INPUT AND AUTOMATIC DETECTION" vertex="1">
+                    <mxGeometry height="26" width="650" x="40" y="565" as="geometry"/>
+                </mxCell>
+                <mxCell id="section-response" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=16;fontStyle=1;fontColor=#087e70;" value="4. ALERT VISIBILITY, TEAM RESPONSE, AND REPORTING" vertex="1">
+                    <mxGeometry height="26" width="700" x="40" y="835" as="geometry"/>
+                </mxCell>
+                <mxCell id="start" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" value="Start&#xa;Open ColdChain Ops" vertex="1">
+                    <mxGeometry height="62" width="120" x="40" y="135" as="geometry"/>
+                </mxCell>
+                <mxCell id="clerk" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" value="Sign in / sign up&#xa;Clerk authentication" vertex="1">
+                    <mxGeometry height="82" width="165" x="205" y="125" as="geometry"/>
+                </mxCell>
+                <mxCell id="profile-sync" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" value="Sync user profile&#xa;Authenticated API session" vertex="1">
+                    <mxGeometry height="82" width="185" x="415" y="125" as="geometry"/>
+                </mxCell>
+                <mxCell id="role-decision" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" value="Role assigned?" vertex="1">
+                    <mxGeometry height="96" width="150" x="650" y="118" as="geometry"/>
+                </mxCell>
+                <mxCell id="pending" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" value="Pending assignment&#xa;Operations remain blocked&#xa;Admin role-assignment email sent" vertex="1">
+                    <mxGeometry height="72" width="225" x="620" y="235" as="geometry"/>
+                </mxCell>
+                <mxCell id="assign-role" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" value="Fleet manager / admin&#xa;assigns a working role in User access" vertex="1">
+                    <mxGeometry height="72" width="230" x="900" y="235" as="geometry"/>
+                </mxCell>
+                <mxCell id="active-user" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" value="Assigned active user&#xa;Operational access enabled" vertex="1">
+                    <mxGeometry height="82" width="185" x="900" y="125" as="geometry"/>
+                </mxCell>
+                <mxCell id="access-control" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" value="Access controls&#xa;Admin role comes from configured Clerk IDs. Managers/admins manage roles and simulator access; active assigned users need a grant to simulate." vertex="1">
+                    <mxGeometry height="108" width="300" x="1130" y="112" as="geometry"/>
+                </mxCell>
+                <mxCell id="app-dashboard" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" value="ColdChain Ops workspace&#xa;Dashboard and navigation" vertex="1">
+                    <mxGeometry height="82" width="205" x="1480" y="125" as="geometry"/>
+                </mxCell>
+                <mxCell id="fleet" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Fleet directory&#xa;Register/manage trucks&#xa;Prepare 20 persistent demo trucks" vertex="1">
+                    <mxGeometry height="92" width="250" x="40" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="shipment" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Shipment management&#xa;Assign an active truck, route, and shipment status" vertex="1">
+                    <mxGeometry height="92" width="245" x="340" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="teams" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Response team setup&#xa;Create active specialist teams and contact details" vertex="1">
+                    <mxGeometry height="92" width="245" x="635" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="sim-access" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" value="Simulator access&#xa;Managers/admins: automatic&#xa;Other active users: manager grant required" vertex="1">
+                    <mxGeometry height="92" width="245" x="930" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="demo-fleet" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="Demo fleet ready&#xa;20 registered trucks and reusable shipment records" vertex="1">
+                    <mxGeometry height="92" width="275" x="1230" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="manual-input" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" value="Sensor console / device&#xa;Submit a reading for an existing shipment&#xa;Temperature, humidity, door, fuel, brake, GPS" vertex="1">
+                    <mxGeometry height="112" width="260" x="40" y="625" as="geometry"/>
+                </mxCell>
+                <mxCell id="csv-input" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" value="CSV upload and replay&#xa;Existing shipment IDs required&#xa;Manager/admin/compliance officer access" vertex="1">
+                    <mxGeometry height="112" width="260" x="340" y="625" as="geometry"/>
+                </mxCell>
+                <mxCell id="simulation" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" value="Truck simulation&#xa;Choose one random truck from 20 per run&#xa;30 GPS/sensor ticks, every 2 seconds&#xa;Temperature, door, and brake alerts planned" vertex="1">
+                    <mxGeometry height="142" width="285" x="640" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="telemetry-store" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Save telemetry in MongoDB&#xa;Shipment, timestamp, sensor values, GPS, simulated flag" vertex="1">
+                    <mxGeometry height="112" width="235" x="970" y="625" as="geometry"/>
+                </mxCell>
+                <mxCell id="rules" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" value="Evaluate incident rules&#xa;Temperature range, open door, low fuel, brake warning/failure" vertex="1">
+                    <mxGeometry height="112" width="250" x="1240" y="625" as="geometry"/>
+                </mxCell>
+                <mxCell id="incident-decision" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" value="Incident?" vertex="1">
+                    <mxGeometry height="106" width="135" x="1540" y="628" as="geometry"/>
+                </mxCell>
+                <mxCell id="views" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="Live dashboard and monitoring&#xa;KPIs, latest readings, temperature/humidity trends, GPS map and route progress&#xa;Authenticated SSE refreshes live data" vertex="1">
+                    <mxGeometry height="125" width="295" x="40" y="895" as="geometry"/>
+                </mxCell>
+                <mxCell id="new-incident" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" value="Create a new incident&#xa;Every qualifying reading creates an incident; repeated alerts are retained" vertex="1">
+                    <mxGeometry height="105" width="230" x="380" y="905" as="geometry"/>
+                </mxCell>
+                <mxCell id="auto-route" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" value="Assign response team&#xa;Match incident type to an active team; otherwise use first active team" vertex="1">
+                    <mxGeometry height="105" width="245" x="655" y="905" as="geometry"/>
+                </mxCell>
+                <mxCell id="alert-delivery" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" value="Create dashboard alert&#xa;Optional Gmail email to the assigned team&#39;s contact address" vertex="1">
+                    <mxGeometry height="105" width="250" x="945" y="905" as="geometry"/>
+                </mxCell>
+                <mxCell id="unread-badge" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Incidents navigation badge&#xa;New/unread open incidents show a count. Visiting Incidents marks current alerts read; new incidents show the badge again." vertex="1">
+                    <mxGeometry height="125" width="300" x="1250" y="890" as="geometry"/>
+                </mxCell>
+                <mxCell id="response" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" value="Incident response&#xa;View alert, assign/reassign a team, acknowledge, progress, resolve, or close" vertex="1">
+                    <mxGeometry height="105" width="245" x="655" y="1070" as="geometry"/>
+                </mxCell>
+                <mxCell id="audit" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" value="Record response history&#xa;Team assignments and incident actions appear in audit history" vertex="1">
+                    <mxGeometry height="105" width="250" x="945" y="1070" as="geometry"/>
+                </mxCell>
+                <mxCell id="reports" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="Reports and exports&#xa;Download telemetry, incident, and shipment CSV reports" vertex="1">
+                    <mxGeometry height="105" width="250" x="1250" y="1070" as="geometry"/>
+                </mxCell>
+                <mxCell id="no-incident" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" value="No rule breach&#xa;Keep telemetry visible in monitoring; continue collecting readings" vertex="1">
+                    <mxGeometry height="95" width="205" x="1540" y="895" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="clerk">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" edge="1" parent="1" source="clerk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="profile-sync">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" edge="1" parent="1" source="profile-sync" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="role-decision">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" edge="1" parent="1" source="role-decision" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" target="pending" value="No">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" edge="1" parent="1" source="pending" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="assign-role">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" edge="1" parent="1" source="assign-role" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="active-user">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" edge="1" parent="1" source="role-decision" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#82b366;" target="active-user" value="Yes">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" edge="1" parent="1" source="active-user" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="access-control">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" edge="1" parent="1" source="access-control" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="app-dashboard">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" edge="1" parent="1" source="app-dashboard" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="fleet">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" edge="1" parent="1" source="fleet" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="shipment">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" edge="1" parent="1" source="app-dashboard" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="teams">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e13" edge="1" parent="1" source="access-control" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#9673a6;" target="sim-access">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e14" edge="1" parent="1" source="fleet" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="demo-fleet">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e15" edge="1" parent="1" source="sim-access" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#9673a6;" target="simulation">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e16" edge="1" parent="1" source="demo-fleet" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#82b366;" target="simulation">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e17" edge="1" parent="1" source="shipment" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="manual-input">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e18" edge="1" parent="1" source="manual-input" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="telemetry-store">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e19" edge="1" parent="1" source="csv-input" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="telemetry-store">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e20" edge="1" parent="1" source="simulation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="telemetry-store">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e21" edge="1" parent="1" source="telemetry-store" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="rules">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e22" edge="1" parent="1" source="teams" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#9673a6;" target="rules">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e23" edge="1" parent="1" source="rules" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="incident-decision">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e24" edge="1" parent="1" source="incident-decision" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#82b366;" target="no-incident" value="No breach">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e25" edge="1" parent="1" source="incident-decision" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" target="new-incident" value="Breach">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e26" edge="1" parent="1" source="telemetry-store" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6c8ebf;" target="views" value="Live telemetry / SSE">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e27" edge="1" parent="1" source="new-incident" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" target="auto-route">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e28" edge="1" parent="1" source="auto-route" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="alert-delivery">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e29" edge="1" parent="1" source="alert-delivery" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" target="response" value="Assigned team responds">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e30" edge="1" parent="1" source="response" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="audit">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e31" edge="1" parent="1" source="new-incident" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" target="unread-badge" value="New incident">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e32" edge="1" parent="1" source="unread-badge" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6c8ebf;" target="views" value="View alerts">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e33" edge="1" parent="1" source="audit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#526b69;" target="reports">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e34" edge="1" parent="1" source="no-incident" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#82b366;" target="views">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

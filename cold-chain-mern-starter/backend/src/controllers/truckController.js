@@ -1,4 +1,7 @@
+import mongoose from "mongoose";
 import Truck from "../models/Truck.js";
+import Shipment from "../models/Shipment.js";
+import { deleteShipmentBranch, withDeletionTransaction } from "../services/recordDeletion.js";
 
 export async function getTrucks(req, res) {
   try {
@@ -64,11 +67,19 @@ export async function updateTruck(req, res) {
 
 export async function deleteTruck(req, res) {
   try {
-    const Shipment = (await import("../models/Shipment.js")).default;
-    const inUse = await Shipment.exists({ truckId: req.params.id });
-    if (inUse) return res.status(409).json({ success: false, message: "This truck has shipment history and cannot be deleted. Change its status to maintenance or inactive instead." });
-    const truck = await Truck.findByIdAndDelete(req.params.id);
-    if (!truck) return res.status(404).json({ success: false, message: "Truck not found" });
-    res.json({ success: true, message: "Truck deleted" });
-  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid truck ID" });
+    const result = await withDeletionTransaction(async session => {
+      const truck = await Truck.findById(req.params.id).session(session);
+      if (!truck) return null;
+      const shipmentIds = await Shipment.find({ truckId: truck._id }).distinct("_id").session(session);
+      const deleted = await deleteShipmentBranch(shipmentIds, session);
+      await Truck.deleteOne({ _id: truck._id }, { session });
+      return { plateNo: truck.plateNo, ...deleted };
+    });
+    if (!result) return res.status(404).json({ success: false, message: "Truck not found" });
+    return res.json({ success: true, message: "Truck and linked operational history deleted", data: result });
+  } catch (error) {
+    console.error("deleteTruck:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete truck and linked records" });
+  }
 }

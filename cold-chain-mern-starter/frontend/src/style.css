@@ -7,27 +7,43 @@
 @media(max-width:560px){.top-header h1{font-size:18px}.header-actions{gap:6px}.live-status{display:none}.stats-grid{gap:8px}.stat-card{padding:13px}.stat-card strong{font-size:23px}.welcome-row h2,.section-intro h2{font-size:20px}.report-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr 1fr}.login-card{padding:32px 24px}.login-brand{margin-bottom:38px}.app-footer{gap:10px;flex-direction:column}}
 .trend-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}.trend-card{border:1px solid var(--border);border-radius:9px;padding:13px}.trend-head{display:flex;justify-content:space-between;align-items:center}.trend-head h4{font:700 11px Manrope,sans-serif;margin:0}.trend-head strong{font:800 14px Manrope,sans-serif;color:var(--green)}.trend-card svg{width:100%;height:120px;overflow:visible;margin-top:8px}.trend-card svg line{stroke:var(--border);stroke-width:1;stroke-dasharray:3 4}.trend-card svg polyline{fill:none;stroke:var(--green);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.trend-card svg circle{fill:var(--green);stroke:var(--surface);stroke-width:1.5}.trend-range{display:flex;justify-content:space-between;color:var(--muted);font-size:8px}.trend-card .empty{padding:12px 4px}.trend-card .empty span{display:none}
 @media(max-width:650px){.trend-grid{grid-template-columns:1fr}}
+.route-display{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:18px;align-items:center}.route-map{height:320px;width:100%;border-radius:9px;overflow:hidden}.route-progress{margin-top:13px}.route-progress p{margin-top:8px}.route-map .leaflet-control-attribution{font-size:9px}.truck-map-marker{border:0;background:transparent}.truck-map-marker__icon{display:grid;place-items:center;width:48px;height:48px;border:3px solid #fff;border-radius:50%;background:#087e70;box-shadow:0 3px 12px #102b2a88}.truck-map-marker__icon svg{width:34px;height:34px;filter:drop-shadow(0 1px 1px #102b2a55)}.route-rail{height:320px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:6px}.route-rail-label{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:700;color:var(--muted);text-align:center}.route-rail-track{position:relative;width:12px;flex:1;margin:7px 0;border-radius:20px;background:#dce7f0}.route-rail-fill{position:absolute;inset:0 0 auto;border-radius:20px;background:linear-gradient(180deg,#61a7f2,#2878d1);transition:height .35s ease}.route-rail-stop{position:absolute;left:50%;width:18px;height:18px;border:3px solid #2878d1;border-radius:50%;background:#fff;transform:translate(-50%,-50%);z-index:2}.route-rail-start{top:0}.route-rail-end{top:100%;border-color:#677783}.route-rail-truck{position:absolute;left:50%;width:24px;height:24px;border:3px solid #fff;border-radius:50%;background:#155eb0;color:#fff;font-size:10px;line-height:18px;text-align:center;transform:translate(-50%,-50%);box-shadow:0 2px 8px #173a6255;z-index:3;transition:top .35s ease}
+@media(max-width:560px){.route-display{grid-template-columns:minmax(0,1fr) 72px;gap:10px}.route-map,.route-rail{height:260px}.route-rail-label{max-width:72px;font-size:8px}}
 
-/* Keep dashboard labels and supporting text readable at typical display sizes. */
-body{font-size:18px}
-.brand{font-size:20px}
-.brand small{font-size:12px}
-.nav-caption,.breadcrumb,.live-status,.eyebrow,.stat-label{font-size:13px}
-.nav-item{font-size:17px}
-.connection,.user-card strong,.welcome-row p,.section-intro p,.empty p,.panel-heading p,.trend-range{font-size:15px}
-.user-card small,.stat-card small,.row-main small,.subline,.helper-line,td small.subline{font-size:14px}
-.button,.form-stack label,.form-row label,.text-link,.status-bars .bar-item>div:first-child,.trend-card .empty p{font-size:16px}
-.panel-heading h3{font-size:18px}
-.row-main strong,.pill,.compact-select{font-size:15px}
-th{font-size:13px}
-td,input,select,textarea{font-size:16px}
-.trend-head h4{font-size:16px}
-.trend-range{font-size:13px}
-.top-header h1{font-size:28px}
-.welcome-row h2,.section-intro h2{font-size:30px}
-.stat-card strong{font-size:32px}
+/* Keep dashboard text compact and easy to scan without feeling oversized. */
+body{font-size:15px}
+.brand{font-size:17px}
+.brand small{font-size:11px}
+.nav-caption,.breadcrumb,.live-status,.eyebrow,.stat-label{font-size:11px}
+.nav-item{font-size:14px}
+.connection,.user-card strong,.welcome-row p,.section-intro p,.empty p,.panel-heading p,.trend-range{font-size:13px}
+.user-card small,.stat-card small,.row-main small,.subline,.helper-line,td small.subline{font-size:12px}
+.simulation-alert{display:flex;align-items:flex-start;gap:12px;margin:0 0 14px;padding:12px 14px;border:1px solid #e8b3b3;border-left:4px solid #bd4747;border-radius:9px;background:#fff0f0;color:#912f2f}.simulation-alert-icon{display:grid;place-items:center;flex:0 0 22px;height:22px;border-radius:50%;background:#bd4747;color:#fff;font-size:14px;font-weight:800}.simulation-alert-content{flex:1;min-width:0}.simulation-alert strong{display:block;font-size:11px}.simulation-alert p{margin:4px 0 8px;font-size:10px;line-height:1.5}.simulation-alert ul{max-height:190px;overflow:auto;margin:0;padding:0 8px 0 18px;font-size:10px;line-height:1.7}.simulation-alert li{padding-left:2px}.simulation-alert button{border:0;background:transparent;color:inherit;font-size:18px;line-height:14px;padding:0 2px}:root[data-theme="dark"] .simulation-alert{background:#3a2326;border-color:#76464a;border-left-color:#ed7777;color:#ffd9d9}
+.sidebar nav{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#426b65 #102b2a;padding-right:3px}.sidebar nav::-webkit-scrollbar{width:6px}.sidebar nav::-webkit-scrollbar-track{background:#102b2a;border-radius:4px}.sidebar nav::-webkit-scrollbar-thumb{background:#426b65;border-radius:4px}.sidebar nav::-webkit-scrollbar-thumb:hover{background:#63c5b1}
+.button,.form-stack label,.form-row label,.text-link,.status-bars .bar-item>div:first-child,.trend-card .empty p{font-size:14px}
+.panel-heading h3{font-size:16px}
+.row-main strong,.pill,.compact-select{font-size:13px}
+th{font-size:11px}
+td,input,select,textarea{font-size:13px}
+.trend-head h4{font-size:14px}
+.trend-range{font-size:11px}
+.top-header h1{font-size:24px}
+.welcome-row h2,.section-intro h2{font-size:26px}
+.stat-card strong{font-size:28px}
 
 @media(max-width:560px){
-  .top-header h1{font-size:24px}
-  .welcome-row h2,.section-intro h2{font-size:26px}
+  .top-header h1{font-size:22px}
+  .welcome-row h2,.section-intro h2{font-size:24px}
 }
+
+.alert-delivery-scroll{max-height:420px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--muted) var(--surface-2);padding-right:4px}
+.alert-delivery-scroll::-webkit-scrollbar,.incident-register-scroll::-webkit-scrollbar{width:7px;height:7px}
+.alert-delivery-scroll::-webkit-scrollbar-track,.incident-register-scroll::-webkit-scrollbar-track{background:var(--surface-2);border-radius:5px}
+.alert-delivery-scroll::-webkit-scrollbar-thumb,.incident-register-scroll::-webkit-scrollbar-thumb{background:var(--muted);border-radius:5px}
+.alert-delivery-scroll::-webkit-scrollbar-thumb:hover,.incident-register-scroll::-webkit-scrollbar-thumb:hover{background:var(--green)}
+.incident-register-scroll{max-height:500px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--muted) var(--surface-2)}
+.incident-register-scroll th{position:sticky;top:0;z-index:1;background:var(--surface)}
+.incident-truck-filter{flex:0 1 250px;max-width:250px}
+.delete-action{padding:7px 10px;white-space:nowrap}
+.action-cell{min-width:180px}
+.team-card .delete-action{margin-top:8px}

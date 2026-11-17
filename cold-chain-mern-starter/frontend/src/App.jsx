@@ -1,14 +1,67 @@
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { divIcon } from "leaflet";
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 
 const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 const NAV = [
   ["overview", "Overview", "▦"], ["shipments", "Shipments", "⇄"], ["trucks", "Fleet", "▰"],
   ["monitoring", "Temperature & GPS", "⌁"], ["incidents", "Incidents", "⚑"],
-  ["teams", "Response teams", "♧"], ["reports", "Reports & audit", "▤"]
+  ["teams", "Response teams", "♧"], ["reports", "Reports & audit", "▤"], ["users", "User access", "♙"],
+  ["simulation_access", "Simulation access", "⚙"]
 ];
 const SHIPMENT_STATUSES = ["scheduled", "in_transit", "delayed", "delivered", "cancelled"];
 const INCIDENT_STATUSES = ["new", "active", "acknowledged", "in_progress", "resolved", "closed"];
+const ASSIGNABLE_ROLES = ["fleet_manager", "driver", "action_team_member", "compliance_officer"];
+const DEMO_ROUTES = [
+  { id: "blr-mys", name: "Bengaluru → Mysuru", points: [[12.9716, 77.5946], [12.72, 77.45], [12.48, 77.14], [12.2958, 76.6394]] },
+  { id: "chn-blr", name: "Chennai → Bengaluru", points: [[13.0827, 80.2707], [12.75, 79.72], [12.42, 79.12], [12.68, 78.35], [12.9716, 77.5946]] },
+  { id: "hyd-vij", name: "Hyderabad → Vijayawada", points: [[17.385, 78.4867], [17.12, 79.38], [16.82, 80.08], [16.5062, 80.648]] },
+  { id: "mum-pun", name: "Mumbai → Pune", points: [[19.076, 72.8777], [18.96, 73.18], [18.79, 73.48], [18.5204, 73.8567]] }
+];
+const SIMULATION_TICKS = 30;
+const SIMULATION_INTERVAL_MS = 2000;
+const truckMarkerIcon = divIcon({
+  className: "truck-map-marker",
+  html: '<div class="truck-map-marker__icon" role="img" aria-label="Truck"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 18h31a3 3 0 0 1 3 3v21H8z" fill="#f3faf7"/><path d="M42 26h9l7 9v7H42z" fill="#48b7a4"/><path d="M46 29h4l4 5h-8z" fill="#d9f3ef"/><path d="M13 23h21v3H13zm0 7h21v3H13z" fill="#b6d5cd"/><circle cx="19" cy="44" r="5" fill="#17312e"/><circle cx="49" cy="44" r="5" fill="#17312e"/><circle cx="19" cy="44" r="2" fill="#dce8e4"/><circle cx="49" cy="44" r="2" fill="#dce8e4"/></svg></div>',
+  iconSize: [48, 48],
+  iconAnchor: [24, 24],
+  popupAnchor: [0, -22]
+});
+
+function getRoutePosition(points, progress) {
+  const segmentCount = points.length - 1;
+  const scaledProgress = progress * segmentCount;
+  const segmentIndex = Math.min(Math.floor(scaledProgress), segmentCount - 1);
+  const segmentProgress = progress >= 1 ? 1 : scaledProgress - segmentIndex;
+  const start = points[segmentIndex];
+  const end = points[segmentIndex + 1];
+  return [
+    start[0] + (end[0] - start[0]) * segmentProgress,
+    start[1] + (end[1] - start[1]) * segmentProgress
+  ];
+}
+
+function FitRouteBounds({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    map.fitBounds(points, { padding: [24, 24] });
+  }, [map, points]);
+  return null;
+}
+
+function RouteMap({ route, truck }) {
+  const destination = route.points[route.points.length - 1];
+  return <MapContainer key={route.id} center={route.points[0]} zoom={7} scrollWheelZoom={false} className="route-map">
+    <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+    <FitRouteBounds points={route.points}/>
+    <Polyline positions={route.points} pathOptions={{ color: "#087e70", weight: 5, opacity: 0.8 }}/>
+    <CircleMarker center={route.points[0]} radius={7} pathOptions={{ color: "#087e70", fillColor: "#ffffff", fillOpacity: 1 }}><Popup>Start · {route.name.split(" → ")[0]}</Popup></CircleMarker>
+    <CircleMarker center={destination} radius={7} pathOptions={{ color: "#c44949", fillColor: "#ffffff", fillOpacity: 1 }}><Popup>Destination · {route.name.split(" → ")[1]}</Popup></CircleMarker>
+    {truck && <Marker position={truck.position} icon={truckMarkerIcon}><Popup>{truck.plateNo} · {Math.round(truck.progress * 100)}% complete</Popup></Marker>}
+  </MapContainer>;
+}
 
 function csvRows(text, defaultShipmentId) {
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(line => line.trim());
@@ -61,11 +114,13 @@ function Pill({ children, kind = "neutral" }) { return <span className={`pill pi
 function Empty({ children = "Nothing to display yet." }) { return <div className="empty"><span>◌</span><p>{children}</p></div>; }
 function TrendChart({ data, field, title, unit }) {
   const values = [...data].filter(x => Number.isFinite(x[field])).slice(0, 36).reverse();
-  if (values.length < 2) return <div className="trend-card"><h4>{title}</h4><Empty>At least two readings are needed to draw a trend.</Empty></div>;
+  if (!values.length) return <div className="trend-card"><h4>{title}</h4><Empty>No readings yet. Submit a sensor reading to start this chart.</Empty></div>;
   const nums = values.map(x => Number(x[field]));
-  const min = Math.min(...nums), max = Math.max(...nums), span = Math.max(max - min, 1);
-  const points = nums.map((v, i) => `${18 + i * (264 / (nums.length - 1))},${100 - ((v - min) / span) * 78}`).join(" ");
-  return <div className="trend-card"><div className="trend-head"><h4>{title}</h4><strong>{nums[nums.length - 1]}{unit}</strong></div><svg viewBox="0 0 300 118" role="img" aria-label={`${title} history chart`}><line x1="18" y1="22" x2="282" y2="22"/><line x1="18" y1="61" x2="282" y2="61"/><line x1="18" y1="100" x2="282" y2="100"/><polyline points={points}/>{nums.map((v,i)=><circle key={i} cx={18 + i * (264 / (nums.length - 1))} cy={100 - ((v - min) / span) * 78} r="2.5"/>)}</svg><div className="trend-range"><span>Min {min}{unit}</span><span>Max {max}{unit}</span></div></div>;
+  const min = Math.min(...nums), max = Math.max(...nums);
+  const x = index => nums.length === 1 ? 150 : 18 + index * (264 / (nums.length - 1));
+  const y = value => min === max ? 61 : 100 - ((value - min) / (max - min)) * 78;
+  const points = nums.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+  return <div className="trend-card"><div className="trend-head"><h4>{title}</h4><strong>{nums[nums.length - 1]}{unit}</strong></div><svg viewBox="0 0 300 118" role="img" aria-label={`${title} history chart`}><line x1="18" y1="22" x2="282" y2="22"/><line x1="18" y1="61" x2="282" y2="61"/><line x1="18" y1="100" x2="282" y2="100"/>{nums.length > 1 && <polyline points={points} />}{nums.map((value, index) => <circle key={index} cx={x(index)} cy={y(value)} r="3.5"/>)}</svg><div className="trend-range">{nums.length === 1 ? <><span>1 reading</span><span>Add another to compare</span></> : <><span>Min {min}{unit}</span><span>Max {max}{unit}</span></>}</div></div>;
 }
 
 function Workspace() {
@@ -78,18 +133,27 @@ function Workspace() {
   const [trucks, setTrucks] = useState([]);
   const [telemetry, setTelemetry] = useState([]);
   const [incidents, setIncidents] = useState([]);
+  const [seenIncidentIds, setSeenIncidentIds] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [audit, setAudit] = useState([]);
   const [teams, setTeams] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [latest, setLatest] = useState([]);
   const [uploads, setUploads] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [accessUsers, setAccessUsers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState({ type: "", text: "" });
   const [datasetProgress, setDatasetProgress] = useState(null);
   const [search, setSearch] = useState("");
+  const [incidentTruckFilter, setIncidentTruckFilter] = useState("");
   const [selectedShipment, setSelectedShipment] = useState("");
   const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationStarting, setSimulationStarting] = useState(false);
+  const [simulationAlerts, setSimulationAlerts] = useState([]);
+  const [simulationTruck, setSimulationTruck] = useState(null);
+  const [travelProgress, setTravelProgress] = useState(0);
+  const [simulationRoute, setSimulationRoute] = useState(DEMO_ROUTES[0]);
   const [tempForm, setTempForm] = useState({ temperature: "4.5", humidity: "65", doorStatus: "closed", fuelLevel: "82", brakeStatus: "normal", latitude: "", longitude: "" });
   const [shipmentForm, setShipmentForm] = useState({ truckId: "", origin: "", destination: "" });
   const [truckForm, setTruckForm] = useState({ driverName: "", plateNo: "", capacityKg: "" });
@@ -97,6 +161,7 @@ function Workspace() {
   const [incidentForm, setIncidentForm] = useState({ shipmentId: "", type: "other", severity: "medium", description: "" });
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const simTimer = useRef(null);
+  const simulationStep = useRef(0);
 
   const request = useCallback(async (path, options = {}) => {
     const token = await getToken();
@@ -114,19 +179,65 @@ function Workspace() {
   const loadAll = useCallback(async () => {
     setBusy(true);
     try {
-      const [d, s, t, l, i, a, tm, al, au, asg, p, u] = await Promise.all([
+      const profileResult = await request("/api/users/me");
+      const profileData = profileResult.data;
+      setProfile(profileData);
+
+      if (profileData.role === "pending_assignment") {
+        setDashboard(null); setShipments([]); setTrucks([]); setTelemetry([]); setIncidents([]); setLatest([]);
+        setTeams([]); setAlerts([]); setAudit([]); setAssignments([]); setUploads([]); setPendingUsers([]); setAccessUsers([]);
+        setNotice({ type: "error", text: "Your account is waiting for fleet manager role assignment." });
+        return;
+      }
+
+      const usersRequest = ["fleet_manager", "admin"].includes(profileData.role)
+        ? request("/api/users/pending")
+        : Promise.resolve({ data: [] });
+      const accessUsersRequest = ["fleet_manager", "admin"].includes(profileData.role)
+        ? request("/api/users")
+        : Promise.resolve({ data: [] });
+      const [d, s, t, l, i, a, tm, al, au, asg, u, users, usersWithAccess] = await Promise.all([
         request("/api/dashboard"), request("/api/shipments"), request("/api/trucks"), request("/api/telemetry?limit=100"),
         request("/api/incidents"), request("/api/telemetry/latest"), request("/api/teams"), request("/api/incidents/meta/alerts"),
-        request("/api/incidents/meta/audit"), request("/api/incidents/meta/assignments"), request("/api/users/me"),
-        request("/api/telemetry/uploads")
+        request("/api/incidents/meta/audit"), request("/api/incidents/meta/assignments"), request("/api/telemetry/uploads"),
+        usersRequest, accessUsersRequest
       ]);
       setDashboard(d.data); setShipments(s.data); setTrucks(t.data); setTelemetry(l.data); setIncidents(i.data); setLatest(a.data);
-      setTeams(tm.data); setAlerts(al.data); setAudit(au.data); setAssignments(asg.data); setProfile(p.data);
-      setUploads(u.data);
+      setTeams(tm.data); setAlerts(al.data); setAudit(au.data); setAssignments(asg.data); setUploads(u.data);
+      setPendingUsers(users.data);
+      setAccessUsers(usersWithAccess.data);
       setSelectedShipment(current => current || s.data[0]?._id || "");
       setShipmentForm(current => ({ ...current, truckId: current.truckId || t.data.find(x => x.status === "active")?._id || "" }));
     } catch (error) { setNotice({ type: "error", text: error.message }); }
     finally { setBusy(false); }
+  }, [request]);
+
+  const refreshLiveData = useCallback(async (includeIncidents = false) => {
+    try {
+      const [dashboardResult, telemetryResult, latestResult] = await Promise.all([
+        request("/api/dashboard"),
+        request("/api/telemetry?limit=100"),
+        request("/api/telemetry/latest")
+      ]);
+      setDashboard(dashboardResult.data);
+      setTelemetry(telemetryResult.data);
+      setLatest(latestResult.data);
+
+      if (includeIncidents) {
+        const [incidentsResult, alertsResult, auditResult, assignmentsResult] = await Promise.all([
+          request("/api/incidents"),
+          request("/api/incidents/meta/alerts"),
+          request("/api/incidents/meta/audit"),
+          request("/api/incidents/meta/assignments")
+        ]);
+        setIncidents(incidentsResult.data);
+        setAlerts(alertsResult.data);
+        setAudit(auditResult.data);
+        setAssignments(assignmentsResult.data);
+      }
+    } catch (error) {
+      setNotice({ type: "error", text: error.message });
+    }
   }, [request]);
 
   useEffect(() => {
@@ -142,9 +253,20 @@ function Workspace() {
   }, [authLoaded, userLoaded, isSignedIn, request, user, loadAll]);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("theme", theme); }, [theme]);
-  useEffect(() => { if (!["overview", "monitoring", "incidents"].includes(section)) return; const timer = setInterval(() => loadAll(), 15000); return () => clearInterval(timer); }, [section, loadAll]);
   useEffect(() => {
     if (!profile?._id) return;
+    const storedIds = localStorage.getItem(`seen-incidents-${profile._id}`) || "";
+    setSeenIncidentIds(storedIds ? storedIds.split(",").filter(Boolean) : []);
+  }, [profile?._id]);
+  useEffect(() => {
+    if (section !== "incidents" || !profile?._id || !incidents.length) return;
+    const ids = incidents.map(incident => String(incident._id));
+    localStorage.setItem(`seen-incidents-${profile._id}`, ids.join(","));
+    setSeenIncidentIds(ids);
+  }, [section, profile?._id, incidents]);
+  useEffect(() => { if (!["overview", "monitoring", "incidents"].includes(section)) return; const timer = setInterval(() => loadAll(), 15000); return () => clearInterval(timer); }, [section, loadAll]);
+  useEffect(() => {
+    if (!profile?._id || profile.role === "pending_assignment") return;
     const controller = new AbortController();
     let active = true;
     (async () => {
@@ -161,18 +283,43 @@ function Workspace() {
           buffer += decoder.decode(value, { stream: true });
           const chunks = buffer.split("\n\n");
           buffer = chunks.pop() || "";
-          for (const chunk of chunks) if (chunk.includes("event: telemetry")) await loadAll();
+          for (const chunk of chunks) {
+            if (!chunk.includes("event: telemetry")) continue;
+            const dataLine = chunk.split("\n").find(line => line.startsWith("data: "));
+            if (!dataLine) continue;
+            const event = JSON.parse(dataLine.slice(6));
+            await refreshLiveData(event.detectedIncidents > 0);
+          }
         }
       } catch (error) { if (error.name !== "AbortError") console.warn("Telemetry live stream disconnected", error); }
     })();
     return () => { active = false; controller.abort(); };
-  }, [profile?._id, getToken, loadAll]);
+  }, [profile?._id, profile?.role, getToken, refreshLiveData]);
   useEffect(() => { if (notice.text) { const timer = setTimeout(() => setNotice({ type: "", text: "" }), 6000); return () => clearTimeout(timer); } }, [notice]);
   useEffect(() => () => { if (simTimer.current) clearInterval(simTimer.current); }, []);
 
   const flash = (text, type = "success") => setNotice({ text, type });
   const run = async fn => { setBusy(true); try { await fn(); } catch (error) { flash(error.message, "error"); } finally { setBusy(false); } };
+  const deleteRecord = (path, label, detail) => {
+    if (isSimulating) return flash("Stop the active simulation before deleting records.", "error");
+    if (!window.confirm(`Permanently delete ${label}? ${detail} This cannot be undone.`)) return;
+    run(async () => {
+      await request(path, { method: "DELETE" });
+      flash(`${label} deleted`);
+      await loadAll();
+    });
+  };
   const createTruck = e => { e.preventDefault(); run(async () => { await request("/api/trucks", { method: "POST", body: JSON.stringify({ ...truckForm, capacityKg: Number(truckForm.capacityKg) }) }); setTruckForm({ driverName: "", plateNo: "", capacityKg: "" }); flash("Truck registered successfully"); await loadAll(); }); };
+  const prepareDemoFleet = () => run(async () => {
+    const [origin, destination] = DEMO_ROUTES[0].name.split(" → ");
+    const result = await request("/api/telemetry/simulation/fleet", {
+      method: "POST",
+      body: JSON.stringify({ origin, destination })
+    });
+    if (!Array.isArray(result.data) || result.data.length !== 20) throw new Error("Could not prepare all 20 demo trucks");
+    flash("20 demo trucks are ready in the fleet register");
+    await loadAll();
+  });
   const changeTruckStatus = (id, status) => run(async () => { await request(`/api/trucks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }); flash("Truck status updated"); await loadAll(); });
   const createShipment = e => { e.preventDefault(); run(async () => { await request("/api/shipments", { method: "POST", body: JSON.stringify(shipmentForm) }); setShipmentForm(x => ({ ...x, origin: "", destination: "" })); flash("Shipment created successfully"); await loadAll(); }); };
   const changeShipmentStatus = (id, status) => run(async () => { await request(`/api/shipments/${id}`, { method: "PUT", body: JSON.stringify({ status }) }); flash("Shipment status updated"); await loadAll(); });
@@ -181,29 +328,100 @@ function Workspace() {
     if (!selectedShipment) throw new Error("Select a shipment first");
     const data = { shipmentId: selectedShipment, temperature: Number(tempForm.temperature), humidity: Number(tempForm.humidity), doorStatus: tempForm.doorStatus, fuelLevel: Number(tempForm.fuelLevel), brakeStatus: tempForm.brakeStatus, isSimulated: true, location: { latitude: tempForm.latitude === "" ? null : Number(tempForm.latitude), longitude: tempForm.longitude === "" ? null : Number(tempForm.longitude), label: "Sensor reading" }, ...overrides };
     await request("/api/telemetry", { method: "POST", body: JSON.stringify(data) });
-    await loadAll();
-  }, [request, selectedShipment, tempForm, loadAll]);
-  const startSimulation = () => {
-    if (!selectedShipment) return flash("Create or select a shipment first", "error");
-    if (simTimer.current) clearInterval(simTimer.current);
-    setIsSimulating(true);
-    const push = async () => {
-      try {
-        const temp = Number((2 + Math.random() * 8).toFixed(1));
-        const humidity = Math.round(55 + Math.random() * 25);
-        const token = await getToken();
-        await fetch(`${API}/api/telemetry`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ shipmentId: selectedShipment, temperature: temp, humidity, doorStatus: Math.random() > .95 ? "open" : "closed", fuelLevel: Math.round(40 + Math.random() * 55), brakeStatus: "normal", isSimulated: true }) });
-        await loadAll();
-      } catch (error) { flash(error.message, "error"); stopSimulation(); }
-    };
-    push(); simTimer.current = setInterval(push, 5000); flash("Sensor simulation started · new readings every 5 seconds");
+  }, [request, selectedShipment, tempForm]);
+  const startSimulation = async () => {
+    if (!canRunSimulation) return flash("Ask a fleet manager to grant simulator access", "error");
+    if (!hasActiveResponseTeam) return flash("Create an active response team before running an alert simulation", "error");
+    setSimulationStarting(true);
+    try {
+      const otherRoutes = DEMO_ROUTES.filter(route => route.id !== simulationRoute.id);
+      const route = otherRoutes[Math.floor(Math.random() * otherRoutes.length)];
+      const [origin, destination] = route.name.split(" → ");
+      const fleetResult = await request("/api/telemetry/simulation/fleet", {
+        method: "POST",
+        body: JSON.stringify({ origin, destination })
+      });
+      const fleet = fleetResult.data;
+      if (!Array.isArray(fleet) || fleet.length !== 20) throw new Error("The simulation fleet must contain exactly 20 trucks");
+      const previousTruckId = simulationTruck?.truckId;
+      const availableTrucks = previousTruckId ? fleet.filter(truck => truck.truckId !== previousTruckId) : fleet;
+      const truck = availableTrucks[Math.floor(Math.random() * availableTrucks.length)];
+
+      if (simTimer.current) clearTimeout(simTimer.current);
+      setSimulationRoute(route);
+      setSimulationAlerts([]);
+      setSimulationTruck({ ...truck, position: route.points[0], progress: 0 });
+      simulationStep.current = 0;
+      setTravelProgress(0);
+      setIsSimulating(true);
+
+      const pushBatch = async () => {
+        if (simTimer.current === null) return;
+        try {
+          simulationStep.current += 1;
+          const tick = simulationStep.current;
+          const progress = tick / SIMULATION_TICKS;
+          const position = getRoutePosition(route.points, progress);
+          const simulatedTruck = { ...truck, position, progress };
+          const alertType = tick === 5 ? "temperature_breach" : tick === 10 ? "door_open" : tick === 15 ? "brake_problem" : null;
+          const [latitude, longitude] = position;
+          const readings = [{
+            shipmentId: truck.shipmentId,
+            temperature: alertType === "temperature_breach" ? maxTemp + 4 : Number((3 + Math.random() * 4).toFixed(1)),
+            humidity: Math.round(55 + Math.random() * 25),
+            doorStatus: alertType === "door_open" ? "open" : "closed",
+            fuelLevel: 75,
+            brakeStatus: alertType === "brake_problem" ? "warning" : "normal",
+            location: { latitude, longitude, label: `Simulated demo route: ${route.name}` }
+          }];
+          setTravelProgress(progress);
+          setSimulationTruck(simulatedTruck);
+          const result = await request("/api/telemetry/simulation/batch", {
+            method: "POST",
+            body: JSON.stringify({ readings })
+          });
+          const alertsCreated = result.data.alerts || [];
+          if (alertsCreated.length) {
+            setSimulationAlerts(current => [...alertsCreated, ...current]);
+            const alertTypes = [...new Set(alertsCreated.map(alert => alert.type.replaceAll("_", " ")))].join(", ");
+            flash(`${alertsCreated.length} ${alertTypes} alerts created for ${truck.plateNo}`, "error");
+          }
+          if (tick >= SIMULATION_TICKS) {
+            stopSimulation();
+            flash(`${truck.plateNo} completed the ${route.name} simulation`);
+          } else if (simTimer.current !== null) {
+            simTimer.current = setTimeout(pushBatch, SIMULATION_INTERVAL_MS);
+          }
+        } catch (error) {
+          flash(error.message, "error");
+          stopSimulation();
+        }
+      };
+
+      simTimer.current = setTimeout(pushBatch, 0);
+      flash(`${truck.plateNo} traveling ${route.name} · 3 alerts planned`);
+    } catch (error) {
+      flash(error.message, "error");
+    } finally {
+      setSimulationStarting(false);
+    }
   };
-  const stopSimulation = () => { if (simTimer.current) clearInterval(simTimer.current); simTimer.current = null; setIsSimulating(false); };
+  const stopSimulation = () => { if (simTimer.current) clearTimeout(simTimer.current); simTimer.current = null; setIsSimulating(false); };
 
   const createIncident = e => { e.preventDefault(); run(async () => { await request("/api/incidents", { method: "POST", body: JSON.stringify(incidentForm) }); setIncidentForm({ shipmentId: "", type: "other", severity: "medium", description: "" }); flash("Incident created"); await loadAll(); }); };
   const updateIncident = (id, status) => run(async () => { await request(`/api/incidents/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }); flash("Incident updated"); await loadAll(); });
   const assignIncident = (id, teamId) => run(async () => { if (!teamId) return; await request(`/api/incidents/${id}/assign`, { method: "POST", body: JSON.stringify({ teamId, note: "Assigned from operations dashboard" }) }); flash("Response team assigned"); await loadAll(); });
   const createTeam = e => { e.preventDefault(); run(async () => { await request("/api/teams", { method: "POST", body: JSON.stringify(teamForm) }); setTeamForm({ teamName: "", teamType: "cold_chain", email: "", phone: "", description: "" }); flash("Response team created"); await loadAll(); }); };
+  const assignUserRole = (id, role) => run(async () => {
+    await request(`/api/users/${id}/role`, { method: "PATCH", body: JSON.stringify({ role }) });
+    flash("User role assigned successfully");
+    await loadAll();
+  });
+  const updateSimulationAccess = (id, canRunSimulation) => run(async () => {
+    await request(`/api/users/${id}/simulation-access`, { method: "PATCH", body: JSON.stringify({ canRunSimulation }) });
+    flash(canRunSimulation ? "Simulator access granted" : "Simulator access revoked");
+    await loadAll();
+  });
   const simulateDataset = async upload => {
     setDatasetProgress({ fileName: upload.fileName, processed: upload.simulationProcessedRows, total: upload.validRows, status: "Simulation running" });
     try {
@@ -259,17 +477,26 @@ function Workspace() {
   const exportReport = async type => run(async () => { const token = await getToken(); const response = await fetch(`${API}/api/reports/export?type=${type}`, { headers: { Authorization: `Bearer ${token}` } }); if (!response.ok) { const e = await response.json(); throw new Error(e.message || "Export failed"); } const blob = await response.blob(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cold-chain-${type}-report.csv`; a.click(); URL.revokeObjectURL(url); flash("Report downloaded"); });
 
   const filteredShipments = useMemo(() => shipments.filter(s => `${s.origin} ${s.destination} ${s.truckId?.plateNo || ""}`.toLowerCase().includes(search.toLowerCase())), [shipments, search]);
+  const filteredIncidents = useMemo(() => incidents.filter(incident => !incidentTruckFilter || String(incident.shipmentId?.truckId?._id || incident.shipmentId?.truckId || "") === incidentTruckFilter), [incidents, incidentTruckFilter]);
   const openIncidents = incidents.filter(x => !["resolved", "closed"].includes(x.status));
+  const unreadIncidentCount = openIncidents.filter(incident => !seenIncidentIds.includes(String(incident._id))).length;
+  const accessPending = profile?.role === "pending_assignment";
   const canManage = ["fleet_manager", "admin"].includes(profile?.role);
+  const isAdmin = profile?.role === "admin";
+  const canDeleteTelemetry = canManage || profile?.role === "compliance_officer";
+  const canRunSimulation = canManage || profile?.canRunSimulation === true;
+  const demoTruckCount = trucks.filter(truck => truck.isSimulated && truck.simulationKey?.startsWith("demo-fleet-")).length;
+  const hasActiveResponseTeam = teams.some(team => team.status === "active");
   const minTemp = dashboard?.thresholds?.minTemp ?? 2;
   const maxTemp = dashboard?.thresholds?.maxTemp ?? 8;
   const currentShipment = shipments.find(x => x._id === selectedShipment);
+  const routePosition = simulationTruck?.position || simulationRoute.points[0];
 
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon">CC</span><span>ColdChain<span className="brand-accent">Ops</span><small>LOGISTICS CONTROL</small></span></div>
       <div className="nav-caption">WORKSPACE</div>
-      <nav>{NAV.map(([id, label, icon]) => <button key={id} className={`nav-item ${section === id ? "active" : ""}`} onClick={() => setSection(id)}><span>{icon}</span>{label}{id === "incidents" && openIncidents.length > 0 && <i>{openIncidents.length}</i>}</button>)}</nav>
+      <nav>{NAV.filter(([id]) => !["users", "simulation_access"].includes(id) || canManage).map(([id, label, icon]) => <button key={id} className={`nav-item ${section === id ? "active" : ""}`} onClick={() => setSection(id)}><span>{icon}</span>{label}{id === "incidents" && unreadIncidentCount > 0 && <i>{unreadIncidentCount}</i>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="connection"><span className="online-dot"/> API & database connected</div><div className="user-card"><div className="avatar">{(profile?.name || user?.firstName || "U").slice(0, 1).toUpperCase()}</div><div><strong>{profile?.name || user?.fullName || "Fleet user"}</strong><small>{profile?.role?.replaceAll("_", " ") || "Loading role"}</small></div><UserButton /></div></div>
     </aside>
     <main className="main-area">
@@ -277,6 +504,8 @@ function Workspace() {
       {notice.text && <div className={`toast ${notice.type}`}>{notice.type === "error" ? "!" : "✓"} {notice.text}<button onClick={() => setNotice({ type: "", text: "" })}>×</button></div>}
       {busy && <div className="loading-line"/>}
       {datasetProgress && <p className="helper-line">{datasetProgress.status}: {datasetProgress.fileName}{datasetProgress.total > 0 ? ` · ${datasetProgress.processed}/${datasetProgress.total} rows` : ""}</p>}
+
+      {accessPending && <div className="panel" style={{ marginBottom: 18 }}><div className="panel-heading"><div><h3>Account awaiting assignment</h3><p>Your profile is active but access is restricted until a fleet manager assigns your role.</p></div><Pill kind="warning">Pending</Pill></div><p className="helper-line">An administrator has been notified by email to assign your access. Once a role is assigned, refresh the dashboard to continue.</p></div>}
 
       {section === "overview" && <>
         <div className="welcome-row"><div><div className="eyebrow">OPERATIONS SNAPSHOT</div><h2>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, {profile?.name?.split(" ")[0] || "there"}</h2><p>Here's what's happening across your cold-chain fleet.</p></div><Pill kind="success">Monitoring active</Pill></div>
@@ -286,21 +515,92 @@ function Workspace() {
           <section className="panel span-3"><div className="panel-heading"><div><h3>Latest sensor activity</h3><p>Most recent telemetry across active shipments</p></div><button className="text-link" onClick={() => setSection("monitoring")}>Open monitoring →</button></div>{dashboard?.recentTelemetry?.length ? <div className="table-wrap"><table><thead><tr><th>SHIPMENT</th><th>TEMPERATURE</th><th>HUMIDITY</th><th>DOOR</th><th>RECORDED</th><th>SOURCE</th></tr></thead><tbody>{dashboard.recentTelemetry.map(x => <tr key={x._id}><td>{x.shipmentId?.origin} → {x.shipmentId?.destination}</td><td><strong>{x.temperature ?? "—"}°C</strong></td><td>{x.humidity ?? "—"}%</td><td><Pill kind={x.doorStatus}>{x.doorStatus}</Pill></td><td>{new Date(x.timestamp).toLocaleString()}</td><td>{x.isSimulated ? "Simulated" : "Device / import"}</td></tr>)}</tbody></table></div> : <Empty>Sensor data will appear here once readings are recorded.</Empty>}</section></div>
       </>}
 
-      {section === "shipments" && <><div className="section-intro"><div><div className="eyebrow">TRANSPORT OPERATIONS</div><h2>Shipment management</h2><p>Create consignments, assign active trucks and update delivery progress.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Create shipment</h3><p>Assign a vehicle to a new route</p></div></div><form className="form-stack" onSubmit={createShipment}><label>Active truck<select required value={shipmentForm.truckId} onChange={e => setShipmentForm({ ...shipmentForm, truckId: e.target.value })}><option value="">Choose truck</option>{trucks.filter(x => x.status === "active").map(x => <option key={x._id} value={x._id}>{x.plateNo} · {x.driverName}</option>)}</select></label><label>Origin<input required value={shipmentForm.origin} onChange={e => setShipmentForm({ ...shipmentForm, origin: e.target.value })} placeholder="Warehouse / city"/></label><label>Destination<input required value={shipmentForm.destination} onChange={e => setShipmentForm({ ...shipmentForm, destination: e.target.value })} placeholder="Delivery location"/></label><button className="button button-primary" disabled={!canManage || busy || !trucks.some(x => x.status === "active")}>{canManage ? "Create shipment" : "Fleet manager access required"}</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Shipment register</h3><p>{shipments.length} total records</p></div><input className="search-input" placeholder="Search route or truck" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="table-wrap"><table><thead><tr><th>ROUTE</th><th>TRUCK</th><th>STATUS</th></tr></thead><tbody>{filteredShipments.map(s => <tr key={s._id}><td><strong>{s.origin} → {s.destination}</strong><small className="subline">{s._id.slice(-8).toUpperCase()}</small></td><td>{s.truckId?.plateNo || "—"}<small className="subline">{s.truckId?.driverName || ""}</small></td><td><select className="compact-select" disabled={!canManage} value={s.status} onChange={e => changeShipmentStatus(s._id, e.target.value)}>{SHIPMENT_STATUSES.map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></td></tr>)}</tbody></table>{!filteredShipments.length && <Empty>No shipments match your search.</Empty>}</div></section></div></>}
+      {section === "shipments" && <><div className="section-intro"><div><div className="eyebrow">TRANSPORT OPERATIONS</div><h2>Shipment management</h2><p>Create consignments, assign active trucks and update delivery progress.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Create shipment</h3><p>Assign a vehicle to a new route</p></div></div><form className="form-stack" onSubmit={createShipment}><label>Active truck<select required value={shipmentForm.truckId} onChange={e => setShipmentForm({ ...shipmentForm, truckId: e.target.value })}><option value="">Choose truck</option>{trucks.filter(x => x.status === "active").map(x => <option key={x._id} value={x._id}>{x.plateNo} · {x.driverName}</option>)}</select></label><label>Origin<input required value={shipmentForm.origin} onChange={e => setShipmentForm({ ...shipmentForm, origin: e.target.value })} placeholder="Warehouse / city"/></label><label>Destination<input required value={shipmentForm.destination} onChange={e => setShipmentForm({ ...shipmentForm, destination: e.target.value })} placeholder="Delivery location"/></label><button className="button button-primary" disabled={!canManage || busy || !trucks.some(x => x.status === "active")}>{canManage ? "Create shipment" : "Fleet manager access required"}</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Shipment register</h3><p>{shipments.length} total records</p></div><input className="search-input" placeholder="Search route or truck" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="table-wrap"><table><thead><tr><th>ROUTE</th><th>TRUCK</th><th>STATUS</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{filteredShipments.map(s => <tr key={s._id}><td><strong>{s.origin} → {s.destination}</strong><small className="subline">{s._id.slice(-8).toUpperCase()}</small></td><td>{s.truckId?.plateNo || "—"}<small className="subline">{s.truckId?.driverName || ""}</small></td><td><select className="compact-select" disabled={!canManage} value={s.status} onChange={e => changeShipmentStatus(s._id, e.target.value)}>{SHIPMENT_STATUSES.map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/shipments/${s._id}`, `shipment ${s.origin} to ${s.destination}`, "Its telemetry, incidents, alerts, assignments, and uploaded datasets containing its readings will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!filteredShipments.length && <Empty>No shipments match your search.</Empty>}</div></section></div></>}
 
-      {section === "trucks" && <><div className="section-intro"><div><div className="eyebrow">FLEET DIRECTORY</div><h2>Vehicle management</h2><p>Register refrigerated trucks and maintain fleet availability.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Register truck</h3><p>Add a vehicle to your fleet</p></div></div><form className="form-stack" onSubmit={createTruck}><label>Driver name<input required value={truckForm.driverName} onChange={e => setTruckForm({ ...truckForm, driverName: e.target.value })}/></label><label>Registration number<input required value={truckForm.plateNo} onChange={e => setTruckForm({ ...truckForm, plateNo: e.target.value.toUpperCase() })} placeholder="KA01AB1234"/></label><label>Capacity (kg)<input required type="number" min="1" value={truckForm.capacityKg} onChange={e => setTruckForm({ ...truckForm, capacityKg: e.target.value })}/></label><button className="button button-primary" disabled={!canManage || busy}>{canManage ? "Register vehicle" : "Fleet manager access required"}</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Fleet register</h3><p>{trucks.length} registered vehicles</p></div></div><div className="table-wrap"><table><thead><tr><th>REGISTRATION</th><th>DRIVER</th><th>CAPACITY</th><th>STATUS</th></tr></thead><tbody>{trucks.map(t => <tr key={t._id}><td><strong>{t.plateNo}</strong></td><td>{t.driverName}</td><td>{Number(t.capacityKg).toLocaleString()} kg</td><td><select className="compact-select" disabled={!canManage} value={t.status} onChange={e => changeTruckStatus(t._id, e.target.value)}><option value="active">active</option><option value="inactive">inactive</option><option value="maintenance">maintenance</option></select></td></tr>)}</tbody></table>{!trucks.length && <Empty>No vehicles registered yet.</Empty>}</div></section></div></>}
+      {section === "trucks" && <><div className="section-intro"><div><div className="eyebrow">FLEET DIRECTORY</div><h2>Vehicle management</h2><p>Register refrigerated trucks and maintain fleet availability.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Register truck</h3><p>Add a vehicle to your fleet</p></div></div><form className="form-stack" onSubmit={createTruck}><label>Driver name<input required value={truckForm.driverName} onChange={e => setTruckForm({ ...truckForm, driverName: e.target.value })}/></label><label>Registration number<input required value={truckForm.plateNo} onChange={e => setTruckForm({ ...truckForm, plateNo: e.target.value.toUpperCase() })} placeholder="KA01AB1234"/></label><label>Capacity (kg)<input required type="number" min="1" value={truckForm.capacityKg} onChange={e => setTruckForm({ ...truckForm, capacityKg: e.target.value })}/></label><button className="button button-primary" disabled={!canManage || busy}>{canManage ? "Register vehicle" : "Fleet manager access required"}</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Fleet register</h3><p>{trucks.length} registered vehicles · {demoTruckCount}/20 demo trucks ready</p></div>{demoTruckCount < 20 && <button className="button button-dark" disabled={!canManage || busy} onClick={prepareDemoFleet}>{canManage ? "＋ Add 20 demo trucks" : "Fleet manager access required"}</button>}</div><div className="table-wrap"><table><thead><tr><th>REGISTRATION</th><th>DRIVER</th><th>CAPACITY</th><th>STATUS</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{trucks.map(t => <tr key={t._id}><td><strong>{t.plateNo}</strong></td><td>{t.driverName}</td><td>{Number(t.capacityKg).toLocaleString()} kg</td><td><select className="compact-select" disabled={!canManage} value={t.status} onChange={e => changeTruckStatus(t._id, e.target.value)}><option value="active">active</option><option value="inactive">inactive</option><option value="maintenance">maintenance</option></select></td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/trucks/${t._id}`, `truck ${t.plateNo}`, "Its shipments, telemetry, incidents, alerts, assignments, and uploaded datasets containing its readings will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!trucks.length && <Empty>No vehicles registered yet.</Empty>}</div></section></div></>}
 
-      {section === "monitoring" && <><div className="section-intro"><div><div className="eyebrow">CONDITION INTELLIGENCE</div><h2>Temperature & GPS monitoring</h2><p>Track cold-chain conditions, review sensor history and replay simulated telemetry.</p></div><Pill kind="success">Target range: {minTemp}–{maxTemp}°C</Pill></div><div className="two-col monitor-grid"><section className="panel"><div className="panel-heading"><div><h3>Sensor console</h3><p>Choose a shipment and submit a test reading</p></div></div><div className="form-stack"><label>Shipment<select disabled={isSimulating} value={selectedShipment} onChange={e => setSelectedShipment(e.target.value)}><option value="">Select shipment</option>{shipments.map(s => <option key={s._id} value={s._id}>{s.origin} → {s.destination} · {s._id.slice(-6)}</option>)}</select></label><div className="form-row"><label>Temperature °C<input type="number" step="0.1" value={tempForm.temperature} onChange={e => setTempForm({ ...tempForm, temperature: e.target.value })}/></label><label>Humidity %<input type="number" min="0" max="100" value={tempForm.humidity} onChange={e => setTempForm({ ...tempForm, humidity: e.target.value })}/></label></div><div className="form-row"><label>Door status<select value={tempForm.doorStatus} onChange={e => setTempForm({ ...tempForm, doorStatus: e.target.value })}><option value="closed">Closed</option><option value="open">Open</option><option value="unknown">Unknown</option></select></label><label>Fuel %<input type="number" min="0" max="100" value={tempForm.fuelLevel} onChange={e => setTempForm({ ...tempForm, fuelLevel: e.target.value })}/></label></div><label>Brake status<select value={tempForm.brakeStatus} onChange={e => setTempForm({ ...tempForm, brakeStatus: e.target.value })}><option value="normal">Normal</option><option value="warning">Warning</option><option value="failure">Failure</option><option value="unknown">Unknown</option></select></label><div className="form-row"><label>GPS latitude<input type="number" step="any" value={tempForm.latitude} onChange={e => setTempForm({ ...tempForm, latitude: e.target.value })} placeholder="Optional"/></label><label>GPS longitude<input type="number" step="any" value={tempForm.longitude} onChange={e => setTempForm({ ...tempForm, longitude: e.target.value })} placeholder="Optional"/></label></div><button className="button button-primary" disabled={busy || !selectedShipment} onClick={() => run(async () => { await sendReading(); flash("Sensor reading saved and evaluated for incidents"); })}>＋ Submit reading</button><div className="simulator-box"><div><strong>Sensor simulator</strong><small>Generates randomized readings every 5 seconds.</small></div>{isSimulating ? <button className="button button-danger" onClick={stopSimulation}>Stop simulation</button> : <button className="button button-dark" onClick={startSimulation}>▶ Start demo sensor</button>}</div>{isSimulating && <p className="helper-line"><i className="pulse-dot"/> Simulator is running for the selected shipment.</p>}</div></section>
-          <section className="panel"><div className="panel-heading"><div><h3>Latest shipment conditions</h3><p>Most recent sensor packet per shipment</p></div></div><div className="latest-list">{latest.map(x => <div className="latest-card" key={x._id}><div className="latest-top"><div><strong>{x.shipment?.origin || "Shipment"} → {x.shipment?.destination || ""}</strong><small>{x.shipment?.truckId?.plateNo || "Truck not assigned"}</small></div><Pill kind={x.temperature < minTemp || x.temperature > maxTemp ? "critical" : "success"}>{x.temperature < minTemp || x.temperature > maxTemp ? "Out of range" : "In range"}</Pill></div><div className="reading-values"><div><strong>{x.temperature ?? "—"}<small>°C</small></strong><span>Temperature</span></div><div><strong>{x.humidity ?? "—"}<small>%</small></strong><span>Humidity</span></div><div><strong>{x.fuelLevel ?? "—"}<small>%</small></strong><span>Fuel</span></div></div><small className="subline">{new Date(x.timestamp).toLocaleString()} · {x.isSimulated ? "Simulated" : "Device / import"}</small></div>)}{!latest.length && <Empty>No readings recorded. Submit a sensor reading to begin.</Empty>}</div></section></div>
+      {section === "monitoring" && <>
+        <div className="section-intro">
+          <div><div className="eyebrow">CONDITION INTELLIGENCE</div><h2>Temperature & GPS monitoring</h2><p>Track shipment conditions and simulate truck movement with alerts.</p></div>
+          <Pill kind="success">Target range: {minTemp}–{maxTemp}°C</Pill>
+        </div>
+        <div className="two-col monitor-grid">
+          <section className="panel">
+            <div className="panel-heading"><div><h3>Sensor console</h3><p>Choose a shipment and submit a test reading</p></div></div>
+            <div className="form-stack">
+              <label>Shipment<select disabled={isSimulating} value={selectedShipment} onChange={e => setSelectedShipment(e.target.value)}><option value="">Select shipment</option>{shipments.map(s => <option key={s._id} value={s._id}>{s.origin} → {s.destination} · {s._id.slice(-6)}</option>)}</select></label>
+              <div className="form-row"><label>Temperature °C<input type="number" step="0.1" value={tempForm.temperature} onChange={e => setTempForm({ ...tempForm, temperature: e.target.value })}/></label><label>Humidity %<input type="number" min="0" max="100" value={tempForm.humidity} onChange={e => setTempForm({ ...tempForm, humidity: e.target.value })}/></label></div>
+              <div className="form-row"><label>Door status<select value={tempForm.doorStatus} onChange={e => setTempForm({ ...tempForm, doorStatus: e.target.value })}><option value="closed">Closed</option><option value="open">Open</option><option value="unknown">Unknown</option></select></label><label>Fuel %<input type="number" min="0" max="100" value={tempForm.fuelLevel} onChange={e => setTempForm({ ...tempForm, fuelLevel: e.target.value })}/></label></div>
+              <label>Brake status<select value={tempForm.brakeStatus} onChange={e => setTempForm({ ...tempForm, brakeStatus: e.target.value })}><option value="normal">Normal</option><option value="warning">Warning</option><option value="failure">Failure</option><option value="unknown">Unknown</option></select></label>
+              <div className="form-row"><label>GPS latitude<input type="number" step="any" value={tempForm.latitude} onChange={e => setTempForm({ ...tempForm, latitude: e.target.value })} placeholder="Optional"/></label><label>GPS longitude<input type="number" step="any" value={tempForm.longitude} onChange={e => setTempForm({ ...tempForm, longitude: e.target.value })} placeholder="Optional"/></label></div>
+              <button className="button button-primary" disabled={busy || !selectedShipment} onClick={() => run(async () => { await sendReading(); flash("Sensor reading saved and evaluated for incidents"); })}>＋ Submit reading</button>
+              <div className="simulator-box"><div><strong>Truck travel simulation</strong><small>20 demo trucks available · one random truck per run · 3 alerts for that truck</small></div>{isSimulating ? <button className="button button-danger" onClick={stopSimulation}>Stop simulation</button> : <button className="button button-dark" disabled={!canRunSimulation || simulationStarting || !hasActiveResponseTeam} onClick={startSimulation}>{simulationStarting ? "Selecting a truck…" : "▶ Start simulation"}</button>}</div>
+              {!hasActiveResponseTeam && <p className="helper-line">Create an active response team before running an alert simulation.</p>}
+              {!canRunSimulation && <p className="helper-line">Ask your fleet manager to grant you simulator access.</p>}
+              {isSimulating && <p className="helper-line"><i className="pulse-dot"/> {simulationTruck?.plateNo} is traveling; three alerts will be generated for this truck.</p>}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-heading"><div><h3>Latest shipment conditions</h3><p>Most recent sensor packet per shipment</p></div></div>
+            <div className="latest-list">{latest.map(x => <div className="latest-card" key={x._id}><div className="latest-top"><div><strong>{x.shipment?.origin || "Shipment"} → {x.shipment?.destination || ""}</strong><small>{x.shipment?.truckId?.plateNo || "Truck not assigned"}</small></div><Pill kind={x.temperature < minTemp || x.temperature > maxTemp ? "critical" : "success"}>{x.temperature < minTemp || x.temperature > maxTemp ? "Out of range" : "In range"}</Pill></div><div className="reading-values"><div><strong>{x.temperature ?? "—"}<small>°C</small></strong><span>Temperature</span></div><div><strong>{x.humidity ?? "—"}<small>%</small></strong><span>Humidity</span></div><div><strong>{x.fuelLevel ?? "—"}<small>%</small></strong><span>Fuel</span></div></div><small className="subline">{new Date(x.timestamp).toLocaleString()} · {x.isSimulated ? "Simulated" : "Device / import"}</small></div>)}{!latest.length && <Empty>No readings recorded. Submit a sensor reading to begin.</Empty>}</div>
+          </section>
+        </div>
+        <section className="panel full-panel">
+          <div className="panel-heading"><div><h3>Live truck route</h3><p>{simulationTruck ? `${simulationTruck.plateNo} · ${simulationRoute.name}` : `Random truck from 20 demo trucks · ${simulationRoute.name}`}</p></div><Pill kind={isSimulating ? "active" : "neutral"}>{isSimulating ? "In transit" : "Simulation idle"}</Pill></div>
+          {simulationAlerts.length > 0 && <div className="simulation-alert" role="status" aria-live="polite">
+            <span className="simulation-alert-icon">!</span>
+            <div className="simulation-alert-content">
+              <strong>{simulationAlerts.length} simulation alerts</strong>
+              <p>Each alert is listed with its truck and route.</p>
+              <ul>{simulationAlerts.map(alert => <li key={alert.incidentId}><b>{alert.plateNo}</b> · {alert.origin} → {alert.destination} · {alert.type.replaceAll("_", " ")} ({alert.severity})</li>)}</ul>
+            </div>
+            <button type="button" aria-label="Dismiss simulation alerts" onClick={() => setSimulationAlerts([])}>×</button>
+          </div>}
+          <div className="route-display">
+            <RouteMap route={simulationRoute} truck={simulationTruck}/>
+            <div className="route-rail" aria-label={`Truck route progress: ${Math.round(travelProgress * 100)} percent`}>
+              <span className="route-rail-label">{simulationRoute.name.split(" → ")[0]}</span>
+              <div className="route-rail-track">
+                <div className="route-rail-fill" style={{ height: `${travelProgress * 100}%` }}/>
+                <span className="route-rail-stop route-rail-start"/>
+                <span className="route-rail-truck" style={{ top: `${travelProgress * 100}%` }} title="Selected truck progress">●</span>
+                <span className="route-rail-stop route-rail-end"/>
+              </div>
+              <span className="route-rail-label">{simulationRoute.name.split(" → ")[1]}</span>
+            </div>
+          </div>
+          <div className="route-progress"><p className="helper-line">{simulationTruck?.plateNo || "No truck selected"} · {Math.round(travelProgress * 100)}% complete · {routePosition[0].toFixed(4)}, {routePosition[1].toFixed(4)} · GPS updates every 2 seconds</p></div>
+        </section>
           <section className="panel full-panel"><div className="panel-heading"><div><h3>Sensor trends</h3><p>Recent readings for the selected shipment · auto-refreshes every 15 seconds</p></div></div><div className="trend-grid"><TrendChart data={telemetry.filter(x => !selectedShipment || x.shipmentId?._id === selectedShipment)} field="temperature" title="Temperature trend" unit="°C"/><TrendChart data={telemetry.filter(x => !selectedShipment || x.shipmentId?._id === selectedShipment)} field="humidity" title="Humidity trend" unit="%"/></div></section>
-          <section className="panel full-panel"><div className="panel-heading"><div><h3>Uploaded datasets & simulation</h3><p>CSV rows saved in MongoDB Atlas and replayed through incident detection</p></div><Pill kind="neutral">{uploads.length} datasets</Pill></div><div className="table-wrap"><table><thead><tr><th>DATASET</th><th>ROWS</th><th>SIMULATION</th><th>UPLOADED</th><th>ACTION</th></tr></thead><tbody>{uploads.map(upload => <tr key={upload._id}><td><strong>{upload.fileName}</strong></td><td>{upload.validRows} valid · {upload.rejectedRows} rejected</td><td><Pill kind={upload.simulationStatus}>{upload.simulationStatus.replaceAll("_", " ")}</Pill>{upload.simulationStatus !== "completed" && <small className="subline">{upload.simulationProcessedRows}/{upload.validRows} replayed</small>}</td><td>{new Date(upload.uploadTime).toLocaleString()}</td><td>{upload.simulationStatus !== "completed" && <button className="button button-dark" disabled={busy || !canManage} onClick={() => run(() => simulateDataset(upload))}>{upload.simulationProcessedRows ? "Continue simulation" : "Run simulation"}</button>}</td></tr>)}</tbody></table>{!uploads.length && <Empty>Upload a CSV dataset to save it to Atlas and run a simulation.</Empty>}</div></section>
-          <section className="panel full-panel"><div className="panel-heading"><div><h3>Telemetry history & GPS positions</h3><p>Most recent 100 sensor readings</p></div><label className="upload-label">Upload CSV dataset<input type="file" accept=".csv,text/csv" onChange={importFile}/></label></div><div className="table-wrap"><table><thead><tr><th>TIME</th><th>SHIPMENT</th><th>TEMP</th><th>HUMIDITY</th><th>FUEL / BRAKES</th><th>GPS</th></tr></thead><tbody>{telemetry.slice(0, 100).map(x => <tr key={x._id}><td>{new Date(x.timestamp).toLocaleString()}</td><td>{x.shipmentId?.origin || ""} → {x.shipmentId?.destination || ""}</td><td><strong>{x.temperature ?? "—"}°C</strong></td><td>{x.humidity ?? "—"}%</td><td>{x.fuelLevel ?? "—"}% · {x.brakeStatus}</td><td>{x.location?.latitude != null && x.location?.longitude != null ? <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${x.location.latitude},${x.location.longitude}`}>{x.location.latitude.toFixed(4)}, {x.location.longitude.toFixed(4)} ↗</a> : "No GPS"}</td></tr>)}</tbody></table>{!telemetry.length && <Empty>Telemetry history will appear here.</Empty>}</div></section></>}
+          <section className="panel full-panel"><div className="panel-heading"><div><h3>Uploaded datasets & simulation</h3><p>CSV rows saved in MongoDB Atlas and replayed through incident detection</p></div><Pill kind="neutral">{uploads.length} datasets</Pill></div><div className="table-wrap"><table><thead><tr><th>DATASET</th><th>ROWS</th><th>SIMULATION</th><th>UPLOADED</th><th>ACTION</th></tr></thead><tbody>{uploads.map(upload => <tr key={upload._id}><td><strong>{upload.fileName}</strong></td><td>{upload.validRows} valid · {upload.rejectedRows} rejected</td><td><Pill kind={upload.simulationStatus}>{upload.simulationStatus.replaceAll("_", " ")}</Pill>{upload.simulationStatus !== "completed" && <small className="subline">{upload.simulationProcessedRows}/{upload.validRows} replayed</small>}</td><td>{new Date(upload.uploadTime).toLocaleString()}</td><td className="action-cell">{upload.simulationStatus !== "completed" && <button className="button button-dark" disabled={busy || !canManage} onClick={() => run(() => simulateDataset(upload))}>{upload.simulationProcessedRows ? "Continue simulation" : "Run simulation"}</button>}{canDeleteTelemetry && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/telemetry/uploads/${upload._id}`, `uploaded dataset ${upload.fileName}`, "All its telemetry readings and generated incidents, alerts, assignments, and audit entries will also be deleted.")}>Delete</button>}</td></tr>)}</tbody></table>{!uploads.length && <Empty>Upload a CSV dataset to save it to Atlas and run a simulation.</Empty>}</div></section>
+          <section className="panel full-panel"><div className="panel-heading"><div><h3>Telemetry history & GPS positions</h3><p>Most recent 100 sensor readings</p></div><label className="upload-label">Upload CSV dataset<input type="file" accept=".csv,text/csv" onChange={importFile}/></label></div><div className="table-wrap"><table><thead><tr><th>TIME</th><th>SHIPMENT</th><th>TEMP</th><th>HUMIDITY</th><th>FUEL / BRAKES</th><th>GPS</th>{canDeleteTelemetry && <th>ACTION</th>}</tr></thead><tbody>{telemetry.slice(0, 100).map(x => <tr key={x._id}><td>{new Date(x.timestamp).toLocaleString()}</td><td>{x.shipmentId?.origin || ""} → {x.shipmentId?.destination || ""}</td><td><strong>{x.temperature ?? "—"}°C</strong></td><td>{x.humidity ?? "—"}%</td><td>{x.fuelLevel ?? "—"}% · {x.brakeStatus}</td><td>{x.location?.latitude != null && x.location?.longitude != null ? <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${x.location.latitude},${x.location.longitude}`}>{x.location.latitude.toFixed(4)}, {x.location.longitude.toFixed(4)} ↗</a> : "No GPS"}</td>{canDeleteTelemetry && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/telemetry/${x._id}`, `telemetry reading from ${new Date(x.timestamp).toLocaleString()}`, "Its generated incidents and related alert history will also be deleted. If it belongs to a CSV dataset, the entire dataset and its readings will be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!telemetry.length && <Empty>Telemetry history will appear here.</Empty>}</div></section></>}
 
-      {section === "incidents" && <><div className="section-intro"><div><div className="eyebrow">ALERT & RESPONSE CENTER</div><h2>Incident management</h2><p>Automatically detected breaches and manually reported events.</p></div><Pill kind={openIncidents.length ? "warning" : "success"}>{openIncidents.length} open incidents</Pill></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Report an incident</h3><p>Create a manual operational event</p></div></div><form className="form-stack" onSubmit={createIncident}><label>Shipment<select required value={incidentForm.shipmentId} onChange={e => setIncidentForm({ ...incidentForm, shipmentId: e.target.value })}><option value="">Select shipment</option>{shipments.map(s => <option key={s._id} value={s._id}>{s.origin} → {s.destination}</option>)}</select></label><label>Incident type<select value={incidentForm.type} onChange={e => setIncidentForm({ ...incidentForm, type: e.target.value })}>{["temperature_breach", "door_open", "low_fuel", "accident", "brake_problem", "other"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Severity<select value={incidentForm.severity} onChange={e => setIncidentForm({ ...incidentForm, severity: e.target.value })}>{["low", "medium", "high", "critical"].map(x => <option key={x}>{x}</option>)}</select></label><label>Description<textarea required rows="3" value={incidentForm.description} onChange={e => setIncidentForm({ ...incidentForm, description: e.target.value })} placeholder="Describe what happened"/></label><button className="button button-primary" disabled={!canManage || busy || !shipments.length}>Create incident</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Alert delivery log</h3><p>Dashboard and email notification events</p></div></div><div className="list-rows">{alerts.slice(0, 10).map(a => <div className="list-row" key={a._id}><div className="event-icon">✉</div><div className="row-main"><strong>{a.alertType.replaceAll("_", " ")}</strong><small>{a.message}</small></div><Pill kind={a.status}>{a.status}</Pill></div>)}{!alerts.length && <Empty>No alert events yet.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Incident register</h3><p>{incidents.length} total incidents · assign teams and update response status</p></div></div><div className="table-wrap"><table><thead><tr><th>EVENT</th><th>SHIPMENT</th><th>SEVERITY</th><th>ASSIGNED TEAM</th><th>STATUS</th><th>DETECTED</th></tr></thead><tbody>{incidents.map(x => <tr key={x._id}><td><strong>{x.type.replaceAll("_", " ")}</strong><small className="subline">{x.description}</small></td><td>{x.shipmentId?.origin} → {x.shipmentId?.destination}</td><td><Pill kind={x.severity}>{x.severity}</Pill></td><td><select className="compact-select" disabled={!canManage} value={x.assignedTeamId?._id || ""} onChange={e => assignIncident(x._id, e.target.value)}><option value="">Unassigned</option>{teams.map(t => <option key={t._id} value={t._id}>{t.teamName}</option>)}</select></td><td><select className="compact-select" disabled={!canManage && profile?.role !== "action_team_member"} value={x.status} onChange={e => updateIncident(x._id, e.target.value)}>{INCIDENT_STATUSES.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}</select></td><td>{new Date(x.detectedAt).toLocaleString()}</td></tr>)}</tbody></table>{!incidents.length && <Empty>No incidents to show.</Empty>}</div></section></>}
+      {section === "incidents" && <><div className="section-intro"><div><div className="eyebrow">ALERT & RESPONSE CENTER</div><h2>Incident management</h2><p>Automatically detected breaches and manually reported events.</p></div><Pill kind={openIncidents.length ? "warning" : "success"}>{openIncidents.length} open incidents</Pill></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Report an incident</h3><p>Create a manual operational event</p></div></div><form className="form-stack" onSubmit={createIncident}><label>Shipment<select required value={incidentForm.shipmentId} onChange={e => setIncidentForm({ ...incidentForm, shipmentId: e.target.value })}><option value="">Select shipment</option>{shipments.map(s => <option key={s._id} value={s._id}>{s.origin} → {s.destination}</option>)}</select></label><label>Incident type<select value={incidentForm.type} onChange={e => setIncidentForm({ ...incidentForm, type: e.target.value })}>{["temperature_breach", "door_open", "low_fuel", "accident", "brake_problem", "other"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Severity<select value={incidentForm.severity} onChange={e => setIncidentForm({ ...incidentForm, severity: e.target.value })}>{["low", "medium", "high", "critical"].map(x => <option key={x}>{x}</option>)}</select></label><label>Description<textarea required rows="3" value={incidentForm.description} onChange={e => setIncidentForm({ ...incidentForm, description: e.target.value })} placeholder="Describe what happened"/></label><button className="button button-primary" disabled={!canManage || busy || !shipments.length}>Create incident</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Alert delivery log</h3><p>Dashboard and email notification events</p></div></div><div className="list-rows alert-delivery-scroll">{alerts.map(a => <div className="list-row" key={a._id}><div className="event-icon">✉</div><div className="row-main"><strong>{a.alertType.replaceAll("_", " ")}</strong><small>{a.message}</small></div><Pill kind={a.status}>{a.status}</Pill>{canManage && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/meta/alerts/${a._id}`, "alert event", "Its linked audit entry will also be deleted.")}>Delete</button>}</div>)}{!alerts.length && <Empty>No alert events yet.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Incident register</h3><p>Showing {filteredIncidents.length} of {incidents.length} incidents · assign teams and update response status</p></div><select className="incident-truck-filter" aria-label="Filter incidents by truck" value={incidentTruckFilter} onChange={e => setIncidentTruckFilter(e.target.value)}><option value="">All trucks</option>{trucks.map(truck => <option key={truck._id} value={truck._id}>{truck.plateNo} · {truck.driverName}</option>)}</select></div><div className="table-wrap incident-register-scroll"><table><thead><tr><th>EVENT</th><th>SHIPMENT</th><th>SEVERITY</th><th>ASSIGNED TEAM</th><th>STATUS</th><th>DETECTED</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{filteredIncidents.map(x => <tr key={x._id}><td><strong>{x.type.replaceAll("_", " ")}</strong><small className="subline">{x.description}</small></td><td>{x.shipmentId?.origin} → {x.shipmentId?.destination}</td><td><Pill kind={x.severity}>{x.severity}</Pill></td><td><select className="compact-select" disabled={!canManage} value={x.assignedTeamId?._id || ""} onChange={e => assignIncident(x._id, e.target.value)}><option value="">Unassigned</option>{teams.map(t => <option key={t._id} value={t._id}>{t.teamName}</option>)}</select></td><td><select className="compact-select" disabled={!canManage && profile?.role !== "action_team_member"} value={x.status} onChange={e => updateIncident(x._id, e.target.value)}>{INCIDENT_STATUSES.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}</select></td><td>{new Date(x.detectedAt).toLocaleString()}</td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/${x._id}`, `incident ${x.type.replaceAll("_", " ")}`, "Its alert events, team assignments, and audit history will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!filteredIncidents.length && <Empty>{incidentTruckFilter ? "No incidents for this truck." : "No incidents to show."}</Empty>}</div></section></>}
 
-      {section === "teams" && <><div className="section-intro"><div><div className="eyebrow">RESPONSE COORDINATION</div><h2>Response teams</h2><p>Manage specialist teams and view incident assignment history.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Create response team</h3><p>Set up a routing destination for incidents</p></div></div><form className="form-stack" onSubmit={createTeam}><label>Team name<input required value={teamForm.teamName} onChange={e => setTeamForm({ ...teamForm, teamName: e.target.value })}/></label><label>Team type<select value={teamForm.teamType} onChange={e => setTeamForm({ ...teamForm, teamType: e.target.value })}>{["cold_chain", "fuel_support", "emergency_response", "maintenance", "general"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Contact email<input type="email" value={teamForm.email} onChange={e => setTeamForm({ ...teamForm, email: e.target.value })}/></label><label>Contact phone<input value={teamForm.phone} onChange={e => setTeamForm({ ...teamForm, phone: e.target.value })}/></label><label>Description<textarea rows="2" value={teamForm.description} onChange={e => setTeamForm({ ...teamForm, description: e.target.value })}/></label><button className="button button-primary" disabled={!canManage || busy}>Create team</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Team directory</h3><p>{teams.length} registered response teams</p></div></div><div className="team-grid">{teams.map(t => <article className="team-card" key={t._id}><div className="team-symbol">♧</div><div><strong>{t.teamName}</strong><small>{t.teamType.replaceAll("_", " ")}</small><p>{t.description || "No description provided."}</p><small>{t.contactInfo?.email || "No email configured"}</small></div><Pill kind={t.status}>{t.status}</Pill></article>)}{!teams.length && <Empty>No response teams configured.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Assignment history</h3><p>Incident routing and reassignment records</p></div></div><div className="table-wrap"><table><thead><tr><th>INCIDENT</th><th>TEAM</th><th>ROLE</th><th>STATUS</th><th>ASSIGNED</th></tr></thead><tbody>{assignments.map(a => <tr key={a._id}><td>{a.incidentId?.type?.replaceAll("_", " ") || "Incident"}</td><td>{a.teamId?.teamName || "—"}</td><td>{a.role}</td><td><Pill kind={a.status}>{a.status}</Pill></td><td>{new Date(a.assignedAt).toLocaleString()}</td></tr>)}</tbody></table>{!assignments.length && <Empty>No assignment history yet.</Empty>}</div></section></>}
+      {section === "teams" && <><div className="section-intro"><div><div className="eyebrow">RESPONSE COORDINATION</div><h2>Response teams</h2><p>Manage specialist teams and view incident assignment history.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Create response team</h3><p>Set up a routing destination for incidents</p></div></div><form className="form-stack" onSubmit={createTeam}><label>Team name<input required value={teamForm.teamName} onChange={e => setTeamForm({ ...teamForm, teamName: e.target.value })}/></label><label>Team type<select value={teamForm.teamType} onChange={e => setTeamForm({ ...teamForm, teamType: e.target.value })}>{["cold_chain", "fuel_support", "emergency_response", "maintenance", "general"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Contact email<input type="email" value={teamForm.email} onChange={e => setTeamForm({ ...teamForm, email: e.target.value })}/></label><label>Contact phone<input value={teamForm.phone} onChange={e => setTeamForm({ ...teamForm, phone: e.target.value })}/></label><label>Description<textarea rows="2" value={teamForm.description} onChange={e => setTeamForm({ ...teamForm, description: e.target.value })}/></label><button className="button button-primary" disabled={!canManage || busy}>Create team</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Team directory</h3><p>{teams.length} registered response teams</p></div></div><div className="team-grid">{teams.map(t => <article className="team-card" key={t._id}><div className="team-symbol">♧</div><div><strong>{t.teamName}</strong><small>{t.teamType.replaceAll("_", " ")}</small><p>{t.description || "No description provided."}</p><small>{t.contactInfo?.email || "No email configured"}</small>{canManage && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/teams/${t._id}`, `response team ${t.teamName}`, "Its assignment history will be deleted and its incidents will become unassigned.")}>Delete</button>}</div><Pill kind={t.status}>{t.status}</Pill></article>)}{!teams.length && <Empty>No response teams configured.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Assignment history</h3><p>Incident routing and reassignment records</p></div></div><div className="table-wrap"><table><thead><tr><th>INCIDENT</th><th>TEAM</th><th>ROLE</th><th>STATUS</th><th>ASSIGNED</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{assignments.map(a => <tr key={a._id}><td>{a.incidentId?.type?.replaceAll("_", " ") || "Incident"}</td><td>{a.teamId?.teamName || "—"}</td><td>{a.role}</td><td><Pill kind={a.status}>{a.status}</Pill></td><td>{new Date(a.assignedAt).toLocaleString()}</td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/meta/assignments/${a._id}`, "team assignment record", "If no other active assignment exists, the incident will become unassigned.")}>Delete</button></td>}</tr>)}</tbody></table>{!assignments.length && <Empty>No assignment history yet.</Empty>}</div></section></>}
 
-      {section === "reports" && <><div className="section-intro"><div><div className="eyebrow">COMPLIANCE & TRACEABILITY</div><h2>Reports & audit trail</h2><p>Export operational records and review changes to incident handling.</p></div></div><div className="report-grid"><article className="report-card"><div className="report-icon">⌁</div><h3>Telemetry report</h3><p>Temperature, humidity, door, fuel, brake and GPS readings.</p><button className="button button-primary" onClick={() => exportReport("telemetry")}>↓ Export CSV</button></article><article className="report-card"><div className="report-icon">⚑</div><h3>Incident report</h3><p>Incident type, severity, response status and assigned team.</p><button className="button button-primary" onClick={() => exportReport("incidents")}>↓ Export CSV</button></article><article className="report-card"><div className="report-icon">⇄</div><h3>Shipment report</h3><p>Shipment routes, truck assignment and delivery milestones.</p><button className="button button-primary" onClick={() => exportReport("shipments")}>↓ Export CSV</button></article></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Audit log</h3><p>Traceable record of incident detection and response actions</p></div><Pill kind="neutral">{audit.length} entries</Pill></div><div className="table-wrap"><table><thead><tr><th>ACTION</th><th>INCIDENT</th><th>REMARKS</th><th>TIME</th></tr></thead><tbody>{audit.map(x => <tr key={x._id}><td><strong>{x.action.replaceAll("_", " ")}</strong></td><td>{x.incidentId?.type?.replaceAll("_", " ") || "—"}</td><td>{x.remarks}</td><td>{new Date(x.actionTime).toLocaleString()}</td></tr>)}</tbody></table>{!audit.length && <Empty>Audit entries will appear as incidents are created and managed.</Empty>}</div></section></>}
+      {section === "reports" && <><div className="section-intro"><div><div className="eyebrow">COMPLIANCE & TRACEABILITY</div><h2>Reports & audit trail</h2><p>Export operational records and review changes to incident handling.</p></div></div><div className="report-grid"><article className="report-card"><div className="report-icon">⌁</div><h3>Telemetry report</h3><p>Temperature, humidity, door, fuel, brake and GPS readings.</p><button className="button button-primary" onClick={() => exportReport("telemetry")}>↓ Export CSV</button></article><article className="report-card"><div className="report-icon">⚑</div><h3>Incident report</h3><p>Incident type, severity, response status and assigned team.</p><button className="button button-primary" onClick={() => exportReport("incidents")}>↓ Export CSV</button></article><article className="report-card"><div className="report-icon">⇄</div><h3>Shipment report</h3><p>Shipment routes, truck assignment and delivery milestones.</p><button className="button button-primary" onClick={() => exportReport("shipments")}>↓ Export CSV</button></article></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Audit log</h3><p>Traceable record of incident detection and response actions</p></div><Pill kind="neutral">{audit.length} entries</Pill></div><div className="table-wrap"><table><thead><tr><th>ACTION</th><th>INCIDENT</th><th>REMARKS</th><th>TIME</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{audit.map(x => <tr key={x._id}><td><strong>{x.action.replaceAll("_", " ")}</strong></td><td>{x.incidentId?.type?.replaceAll("_", " ") || "—"}</td><td>{x.remarks}</td><td>{new Date(x.actionTime).toLocaleString()}</td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/meta/audit/${x._id}`, "audit entry", "Only this audit entry will be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!audit.length && <Empty>Audit entries will appear as incidents are created and managed.</Empty>}</div></section></>}
+      {section === "users" && canManage && <><div className="section-intro"><div><div className="eyebrow">ACCOUNT ADMINISTRATION</div><h2>Pending user access</h2><p>Assign a role to enable a new user’s operational access.</p></div><Pill kind="warning">{pendingUsers.length} pending</Pill></div><section className="panel full-panel"><div className="table-wrap"><table><thead><tr><th>NAME</th><th>EMAIL</th><th>REQUESTED</th><th>ASSIGN ROLE</th>{isAdmin && <th>ACTION</th>}</tr></thead><tbody>{pendingUsers.map(pendingUser => <tr key={pendingUser._id}><td><strong>{pendingUser.name}</strong></td><td>{pendingUser.email}</td><td>{new Date(pendingUser.createdAt).toLocaleDateString()}</td><td><select className="compact-select" aria-label={`Assign role to ${pendingUser.name}`} value={pendingUser.role} disabled={busy} onChange={e => assignUserRole(pendingUser._id, e.target.value)}><option value="pending_assignment">Choose role…</option>{ASSIGNABLE_ROLES.map(role => <option key={role} value={role}>{role.replaceAll("_", " ")}</option>)}</select></td>{isAdmin && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/users/${pendingUser._id}`, `app profile for ${pendingUser.name}`, "Its owned uploads and linked telemetry/incidents will be deleted; shared audit history stays. The Clerk login itself is not removed.")}>Delete</button></td>}</tr>)}</tbody></table>{!pendingUsers.length && <Empty>No users are waiting for role assignment.</Empty>}</div></section></>}
+      {section === "simulation_access" && canManage && <>
+        <div className="section-intro">
+          <div><div className="eyebrow">ACCOUNT ADMINISTRATION</div><h2>Simulation access</h2><p>Grant simulator access to users with an assigned role. Fleet managers and administrators already have access.</p></div>
+          <Pill kind="neutral">{accessUsers.filter(targetUser => targetUser.canRunSimulation || ["admin", "fleet_manager"].includes(targetUser.role)).length} users granted</Pill>
+        </div>
+        <section className="panel full-panel">
+          <div className="table-wrap"><table>
+            <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>SIMULATOR ACCESS</th>{isAdmin && <th>ACTION</th>}</tr></thead>
+            <tbody>{accessUsers.map(targetUser => <tr key={targetUser._id}>
+              <td><strong>{targetUser.name}</strong></td>
+              <td>{targetUser.email}</td>
+              <td>{targetUser.role.replaceAll("_", " ")}</td>
+              <td>{["admin", "fleet_manager"].includes(targetUser.role)
+                ? <Pill kind="success">Granted by role</Pill>
+                : <button className={`button ${targetUser.canRunSimulation ? "button-light" : "button-primary"}`} disabled={busy} onClick={() => updateSimulationAccess(targetUser._id, !targetUser.canRunSimulation)}>{targetUser.canRunSimulation ? "Revoke access" : "Grant access"}</button>}</td>
+              {isAdmin && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/users/${targetUser._id}`, `app profile for ${targetUser.name}`, "Its owned uploads and linked telemetry/incidents will be deleted; shared audit history stays. The Clerk login itself is not removed.")}>Delete</button></td>}
+            </tr>)}</tbody>
+          </table>{!accessUsers.length && <Empty>No active users are available to grant access.</Empty>}</div>
+        </section>
+      </>}
       <footer className="app-footer">ColdChain Ops · Operational monitoring workspace <span>Role: {profile?.role?.replaceAll("_", " ") || "—"}</span></footer>
     </main>
   </div>;

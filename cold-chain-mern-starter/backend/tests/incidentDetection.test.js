@@ -18,3 +18,10 @@ test("door, low fuel and brake failures create separate events", () => {
   assert.deepEqual(events.map(x => x.type), ["door_open", "low_fuel", "brake_problem"]);
   assert.equal(events.at(-1).severity, "critical");
 });
+
+test("simulation alert readings cover temperature, door and brake incidents", () => {
+  const temperature = classifyTelemetry({ temperature: 12, doorStatus: "closed", fuelLevel: 75, brakeStatus: "normal" });
+  const door = classifyTelemetry({ temperature: 4, doorStatus: "open", fuelLevel: 75, brakeStatus: "normal" });
+  const brake = classifyTelemetry({ temperature: 4, doorStatus: "closed", fuelLevel: 75, brakeStatus: "warning" });
+  assert.deepEqual([temperature[0]?.type, door[0]?.type, brake[0]?.type], ["temperature_breach", "door_open", "brake_problem"]);
+});

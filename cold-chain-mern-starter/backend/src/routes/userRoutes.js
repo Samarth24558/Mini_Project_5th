@@ -1,8 +1,14 @@
 import { Router } from "express";
-import { syncProfile, getProfile } from "../controllers/userController.js";
+import { syncProfile, getProfile, listPendingUsers, listUsers, assignUserRole, updateSimulationAccess, deleteUser } from "../controllers/userController.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireRole } from "../middleware/requireRole.js";
 const router = Router();
 router.use(requireAuth);
 router.post("/sync", syncProfile);
 router.get("/me", getProfile);
+router.get("/", requireRole("fleet_manager", "admin"), listUsers);
+router.get("/pending", requireRole("fleet_manager", "admin"), listPendingUsers);
+router.patch("/:id/role", requireRole("fleet_manager", "admin"), assignUserRole);
+router.patch("/:id/simulation-access", requireRole("fleet_manager", "admin"), updateSimulationAccess);
+router.delete("/:id", requireRole("admin"), deleteUser);
 export default router;

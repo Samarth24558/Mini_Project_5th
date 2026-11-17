@@ -16,6 +16,7 @@ const incidentSchema = new mongoose.Schema({
     default: "new",
     index: true
   },
+  isSimulated: { type: Boolean, default: false, index: true },
   assignedTeamId: { type: mongoose.Schema.Types.ObjectId, ref: "Team", default: null, index: true },
   description: { type: String, default: "" },
   evidence: {

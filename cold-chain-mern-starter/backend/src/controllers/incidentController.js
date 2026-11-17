@@ -4,6 +4,7 @@ import AlertEvent from "../models/AlertEvent.js";
 import AuditLog from "../models/AuditLog.js";
 import Team from "../models/Team.js";
 import TeamAssignment from "../models/TeamAssignment.js";
+import { deleteIncidentBranch, withDeletionTransaction } from "../services/recordDeletion.js";
 
 export async function listIncidents(req, res) {
   try {
@@ -11,7 +12,11 @@ export async function listIncidents(req, res) {
     if (req.query.status) filter.status = req.query.status;
     if (req.query.severity) filter.severity = req.query.severity;
     if (req.query.shipmentId) filter.shipmentId = req.query.shipmentId;
-    const data = await Incident.find(filter).populate("shipmentId", "origin destination status truckId").populate("assignedTeamId", "teamName teamType contactInfo").sort({ detectedAt: -1 }).limit(300);
+    const data = await Incident.find(filter)
+      .populate({ path: "shipmentId", select: "origin destination status truckId isSimulated", populate: { path: "truckId", select: "plateNo driverName isSimulated" } })
+      .populate("assignedTeamId", "teamName teamType contactInfo")
+      .sort({ detectedAt: -1 })
+      .limit(300);
     res.json({ success: true, count: data.length, data });
   } catch { res.status(500).json({ success: false, message: "Failed to load incidents" }); }
 }
@@ -55,6 +60,84 @@ export async function assignIncident(req, res) {
     await AuditLog.create({ incidentId: incident._id, action: "team_assigned", actionBy: req.appUser?._id, remarks: note, metadata: { teamId: String(team._id) } });
     res.json({ success: true, data: incident });
   } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+}
+
+export async function deleteIncident(req, res) {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid incident ID" });
+    const result = await withDeletionTransaction(async session => {
+      const incident = await Incident.findById(req.params.id).session(session);
+      if (!incident) return null;
+      return deleteIncidentBranch([incident._id], session);
+    });
+    if (!result) return res.status(404).json({ success: false, message: "Incident not found" });
+    return res.json({ success: true, message: "Incident and linked alerts and history deleted", data: result });
+  } catch (error) {
+    console.error("deleteIncident:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete incident and linked records" });
+  }
+}
+
+export async function deleteAlert(req, res) {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid alert ID" });
+    const result = await withDeletionTransaction(async session => {
+      const alert = await AlertEvent.findById(req.params.id).session(session);
+      if (!alert) return null;
+      const auditLogs = await AuditLog.deleteMany({ alertEventId: alert._id }, { session });
+      await AlertEvent.deleteOne({ _id: alert._id }, { session });
+      return { alert: alert._id, auditLogs: auditLogs.deletedCount };
+    });
+    if (!result) return res.status(404).json({ success: false, message: "Alert not found" });
+    return res.json({ success: true, message: "Alert and its linked audit entries deleted", data: result });
+  } catch (error) {
+    console.error("deleteAlert:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete alert" });
+  }
+}
+
+export async function deleteAuditEntry(req, res) {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid audit entry ID" });
+    const result = await withDeletionTransaction(async session => {
+      const deletion = await AuditLog.deleteOne({ _id: req.params.id }, { session });
+      return deletion.deletedCount;
+    });
+    if (!result) return res.status(404).json({ success: false, message: "Audit entry not found" });
+    return res.json({ success: true, message: "Audit entry deleted" });
+  } catch (error) {
+    console.error("deleteAuditEntry:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete audit entry" });
+  }
+}
+
+export async function deleteAssignment(req, res) {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid assignment ID" });
+    const result = await withDeletionTransaction(async session => {
+      const assignment = await TeamAssignment.findById(req.params.id).session(session);
+      if (!assignment) return null;
+      await TeamAssignment.deleteOne({ _id: assignment._id }, { session });
+      const remainingActiveAssignment = await TeamAssignment.exists({
+        incidentId: assignment.incidentId,
+        teamId: assignment.teamId,
+        status: { $ne: "completed" }
+      }).session(session);
+      if (!remainingActiveAssignment) {
+        await Incident.updateOne(
+          { _id: assignment.incidentId, assignedTeamId: assignment.teamId },
+          { $set: { assignedTeamId: null } },
+          { session }
+        );
+      }
+      return assignment._id;
+    });
+    if (!result) return res.status(404).json({ success: false, message: "Assignment history entry not found" });
+    return res.json({ success: true, message: "Assignment history entry deleted" });
+  } catch (error) {
+    console.error("deleteAssignment:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete assignment history entry" });
+  }
 }
 
 export async function listAlerts(req, res) {

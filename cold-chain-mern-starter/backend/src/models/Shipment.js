@@ -11,7 +11,9 @@ const shipmentSchema = new mongoose.Schema({
     index: true
   },
   departedAt: { type: Date, default: null },
-  deliveredAt: { type: Date, default: null }
+  deliveredAt: { type: Date, default: null },
+  isSimulated: { type: Boolean, default: false, index: true },
+  simulationKey: { type: String, unique: true, sparse: true }
 }, { timestamps: true });
 
 export default mongoose.model("Shipment", shipmentSchema);
