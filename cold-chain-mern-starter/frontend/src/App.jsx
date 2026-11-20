@@ -24,23 +24,72 @@ const SIMULATION_TICKS = 30;
 const SIMULATION_INTERVAL_MS = 2000;
 const truckMarkerIcon = divIcon({
   className: "truck-map-marker",
-  html: '<div class="truck-map-marker__icon" role="img" aria-label="Truck"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 18h31a3 3 0 0 1 3 3v21H8z" fill="#f3faf7"/><path d="M42 26h9l7 9v7H42z" fill="#48b7a4"/><path d="M46 29h4l4 5h-8z" fill="#d9f3ef"/><path d="M13 23h21v3H13zm0 7h21v3H13z" fill="#b6d5cd"/><circle cx="19" cy="44" r="5" fill="#17312e"/><circle cx="49" cy="44" r="5" fill="#17312e"/><circle cx="19" cy="44" r="2" fill="#dce8e4"/><circle cx="49" cy="44" r="2" fill="#dce8e4"/></svg></div>',
+  html: '<div class="truck-map-marker__icon" role="img" aria-label="Truck"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 18h31a3 3 0 0 1 3 3v21H8z" fill="#f3faf7"/><path d="M42 26h9l7 9v7H42z" fill="#48b7a4"/><path d="M46 29h4l4 5h-8z" fill="#d9f3ef"/><path d="M13 23h21v3H13zm0 7h21v3H13z" fill="#b6d5cd"/><g class="truck-wheel"><circle cx="19" cy="44" r="5" fill="#17312e"/><circle cx="19" cy="44" r="2" fill="#dce8e4"/><path d="M19 40v8m-4-4h8" stroke="#dce8e4" stroke-width="1"/></g><g class="truck-wheel"><circle cx="49" cy="44" r="5" fill="#17312e"/><circle cx="49" cy="44" r="2" fill="#dce8e4"/><path d="M49 40v8m-4-4h8" stroke="#dce8e4" stroke-width="1"/></g></svg></div>',
   iconSize: [48, 48],
   iconAnchor: [24, 24],
   popupAnchor: [0, -22]
 });
 
 function getRoutePosition(points, progress) {
-  const segmentCount = points.length - 1;
-  const scaledProgress = progress * segmentCount;
-  const segmentIndex = Math.min(Math.floor(scaledProgress), segmentCount - 1);
-  const segmentProgress = progress >= 1 ? 1 : scaledProgress - segmentIndex;
+  const distances = [0];
+  for (let index = 1; index < points.length; index += 1) {
+    const [startLat, startLon] = points[index - 1];
+    const [endLat, endLon] = points[index];
+    const radians = value => value * Math.PI / 180;
+    const latitudeDelta = radians(endLat - startLat);
+    const longitudeDelta = radians(endLon - startLon);
+    const arc = Math.sin(latitudeDelta / 2) ** 2
+      + Math.cos(radians(startLat)) * Math.cos(radians(endLat)) * Math.sin(longitudeDelta / 2) ** 2;
+    distances.push(distances[index - 1] + 6371 * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc)));
+  }
+
+  const targetDistance = Math.max(0, Math.min(1, progress)) * distances[distances.length - 1];
+  let segmentIndex = distances.findIndex((distance, index) => index > 0 && distance >= targetDistance) - 1;
+  if (segmentIndex < 0) segmentIndex = points.length - 2;
+  const segmentDistance = distances[segmentIndex + 1] - distances[segmentIndex];
+  const segmentProgress = segmentDistance
+    ? (targetDistance - distances[segmentIndex]) / segmentDistance
+    : 0;
   const start = points[segmentIndex];
   const end = points[segmentIndex + 1];
   return [
     start[0] + (end[0] - start[0]) * segmentProgress,
     start[1] + (end[1] - start[1]) * segmentProgress
   ];
+}
+
+function AnimatedTruckMarker({ route, truck, progress, duration }) {
+  const markerRef = useRef(null);
+  const motionRef = useRef({ progress: 0, frame: null });
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return undefined;
+
+    if (motionRef.current.frame !== null) cancelAnimationFrame(motionRef.current.frame);
+    const from = motionRef.current.progress;
+    const startedAt = performance.now();
+    const animate = now => {
+      const progressInAnimation = Math.min(1, (now - startedAt) / duration);
+      const currentProgress = from + (progress - from) * progressInAnimation;
+      motionRef.current.progress = currentProgress;
+      const position = getRoutePosition(route.points, currentProgress);
+      marker.setLatLng(position);
+
+      if (progressInAnimation < 1) {
+        motionRef.current.frame = requestAnimationFrame(animate);
+      } else {
+        motionRef.current.frame = null;
+      }
+    };
+
+    motionRef.current.frame = requestAnimationFrame(animate);
+    return () => {
+      if (motionRef.current.frame !== null) cancelAnimationFrame(motionRef.current.frame);
+    };
+  }, [duration, progress, route.points]);
+
+  return <Marker ref={markerRef} position={route.points[0]} icon={truckMarkerIcon}><Popup>{truck.plateNo} · {Math.round(progress * 100)}% · simulated trip</Popup></Marker>;
 }
 
 function FitRouteBounds({ points }) {
@@ -51,7 +100,7 @@ function FitRouteBounds({ points }) {
   return null;
 }
 
-function RouteMap({ route, truck }) {
+function RouteMap({ route, truck, animationDuration }) {
   const destination = route.points[route.points.length - 1];
   return <MapContainer key={route.id} center={route.points[0]} zoom={7} scrollWheelZoom={false} className="route-map">
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
@@ -59,7 +108,7 @@ function RouteMap({ route, truck }) {
     <Polyline positions={route.points} pathOptions={{ color: "#087e70", weight: 5, opacity: 0.8 }}/>
     <CircleMarker center={route.points[0]} radius={7} pathOptions={{ color: "#087e70", fillColor: "#ffffff", fillOpacity: 1 }}><Popup>Start · {route.name.split(" → ")[0]}</Popup></CircleMarker>
     <CircleMarker center={destination} radius={7} pathOptions={{ color: "#c44949", fillColor: "#ffffff", fillOpacity: 1 }}><Popup>Destination · {route.name.split(" → ")[1]}</Popup></CircleMarker>
-    {truck && <Marker position={truck.position} icon={truckMarkerIcon}><Popup>{truck.plateNo} · {Math.round(truck.progress * 100)}% complete</Popup></Marker>}
+    {truck && <AnimatedTruckMarker route={route} truck={truck} progress={truck.progress} duration={animationDuration}/>}
   </MapContainer>;
 }
 
@@ -357,6 +406,7 @@ function Workspace() {
 
       const pushBatch = async () => {
         if (simTimer.current === null) return;
+        const tickStartedAt = performance.now();
         try {
           simulationStep.current += 1;
           const tick = simulationStep.current;
@@ -390,7 +440,8 @@ function Workspace() {
             stopSimulation();
             flash(`${truck.plateNo} completed the ${route.name} simulation`);
           } else if (simTimer.current !== null) {
-            simTimer.current = setTimeout(pushBatch, SIMULATION_INTERVAL_MS);
+            const delay = Math.max(0, tickStartedAt + SIMULATION_INTERVAL_MS - performance.now());
+            simTimer.current = setTimeout(pushBatch, delay);
           }
         } catch (error) {
           flash(error.message, "error");
@@ -515,7 +566,37 @@ function Workspace() {
           <section className="panel span-3"><div className="panel-heading"><div><h3>Latest sensor activity</h3><p>Most recent telemetry across active shipments</p></div><button className="text-link" onClick={() => setSection("monitoring")}>Open monitoring →</button></div>{dashboard?.recentTelemetry?.length ? <div className="table-wrap"><table><thead><tr><th>SHIPMENT</th><th>TEMPERATURE</th><th>HUMIDITY</th><th>DOOR</th><th>RECORDED</th><th>SOURCE</th></tr></thead><tbody>{dashboard.recentTelemetry.map(x => <tr key={x._id}><td>{x.shipmentId?.origin} → {x.shipmentId?.destination}</td><td><strong>{x.temperature ?? "—"}°C</strong></td><td>{x.humidity ?? "—"}%</td><td><Pill kind={x.doorStatus}>{x.doorStatus}</Pill></td><td>{new Date(x.timestamp).toLocaleString()}</td><td>{x.isSimulated ? "Simulated" : "Device / import"}</td></tr>)}</tbody></table></div> : <Empty>Sensor data will appear here once readings are recorded.</Empty>}</section></div>
       </>}
 
-      {section === "shipments" && <><div className="section-intro"><div><div className="eyebrow">TRANSPORT OPERATIONS</div><h2>Shipment management</h2><p>Create consignments, assign active trucks and update delivery progress.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Create shipment</h3><p>Assign a vehicle to a new route</p></div></div><form className="form-stack" onSubmit={createShipment}><label>Active truck<select required value={shipmentForm.truckId} onChange={e => setShipmentForm({ ...shipmentForm, truckId: e.target.value })}><option value="">Choose truck</option>{trucks.filter(x => x.status === "active").map(x => <option key={x._id} value={x._id}>{x.plateNo} · {x.driverName}</option>)}</select></label><label>Origin<input required value={shipmentForm.origin} onChange={e => setShipmentForm({ ...shipmentForm, origin: e.target.value })} placeholder="Warehouse / city"/></label><label>Destination<input required value={shipmentForm.destination} onChange={e => setShipmentForm({ ...shipmentForm, destination: e.target.value })} placeholder="Delivery location"/></label><button className="button button-primary" disabled={!canManage || busy || !trucks.some(x => x.status === "active")}>{canManage ? "Create shipment" : "Fleet manager access required"}</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Shipment register</h3><p>{shipments.length} total records</p></div><input className="search-input" placeholder="Search route or truck" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="table-wrap"><table><thead><tr><th>ROUTE</th><th>TRUCK</th><th>STATUS</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{filteredShipments.map(s => <tr key={s._id}><td><strong>{s.origin} → {s.destination}</strong><small className="subline">{s._id.slice(-8).toUpperCase()}</small></td><td>{s.truckId?.plateNo || "—"}<small className="subline">{s.truckId?.driverName || ""}</small></td><td><select className="compact-select" disabled={!canManage} value={s.status} onChange={e => changeShipmentStatus(s._id, e.target.value)}>{SHIPMENT_STATUSES.map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/shipments/${s._id}`, `shipment ${s.origin} to ${s.destination}`, "Its telemetry, incidents, alerts, assignments, and uploaded datasets containing its readings will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!filteredShipments.length && <Empty>No shipments match your search.</Empty>}</div></section></div></>}
+      {section === "shipments" && <>
+        <div className="section-intro">
+          <div><div className="eyebrow">TRANSPORT OPERATIONS</div><h2>Shipment management</h2><p>Create consignments, assign active trucks and update delivery progress.</p></div>
+        </div>
+        <div className="two-col">
+          <section className="panel">
+            <div className="panel-heading"><div><h3>Create shipment</h3><p>Assign a vehicle to a new route</p></div></div>
+            <form className="form-stack" onSubmit={createShipment}>
+              <label>Active truck<select required value={shipmentForm.truckId} onChange={e => setShipmentForm({ ...shipmentForm, truckId: e.target.value })}><option value="">Choose truck</option>{trucks.filter(x => x.status === "active").map(x => <option key={x._id} value={x._id}>{x.plateNo} · {x.driverName}</option>)}</select></label>
+              <label>Origin<input required value={shipmentForm.origin} onChange={e => setShipmentForm({ ...shipmentForm, origin: e.target.value })} placeholder="Warehouse / city"/></label>
+              <label>Destination<input required value={shipmentForm.destination} onChange={e => setShipmentForm({ ...shipmentForm, destination: e.target.value })} placeholder="Delivery location"/></label>
+              <button className="button button-primary" disabled={!canManage || busy || !trucks.some(x => x.status === "active")}>{canManage ? "Create shipment" : "Fleet manager access required"}</button>
+            </form>
+          </section>
+          <section className="panel">
+            <div className="panel-heading"><div><h3>Shipment register</h3><p>{shipments.length} total records</p></div><input className="search-input" placeholder="Search route or truck" value={search} onChange={e => setSearch(e.target.value)}/></div>
+            <div className="table-wrap shipment-register-scroll">
+              <table>
+                <thead><tr><th>ROUTE</th><th>TRUCK</th><th>STATUS</th>{canManage && <th>ACTION</th>}</tr></thead>
+                <tbody>{filteredShipments.map(s => <tr key={s._id}>
+                  <td><strong>{s.origin} → {s.destination}</strong><small className="subline">{s._id.slice(-8).toUpperCase()}</small></td>
+                  <td>{s.truckId?.plateNo || "—"}<small className="subline">{s.truckId?.driverName || ""}</small></td>
+                  <td><select className="compact-select" disabled={!canManage} value={s.status} onChange={e => changeShipmentStatus(s._id, e.target.value)}>{SHIPMENT_STATUSES.map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></td>
+                  {canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/shipments/${s._id}`, `shipment ${s.origin} to ${s.destination}`, "Its telemetry, incidents, alerts, assignments, and uploaded datasets containing its readings will also be deleted.")}>Delete</button></td>}
+                </tr>)}</tbody>
+              </table>
+              {!filteredShipments.length && <Empty>No shipments match your search.</Empty>}
+            </div>
+          </section>
+        </div>
+      </>}
 
       {section === "trucks" && <><div className="section-intro"><div><div className="eyebrow">FLEET DIRECTORY</div><h2>Vehicle management</h2><p>Register refrigerated trucks and maintain fleet availability.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Register truck</h3><p>Add a vehicle to your fleet</p></div></div><form className="form-stack" onSubmit={createTruck}><label>Driver name<input required value={truckForm.driverName} onChange={e => setTruckForm({ ...truckForm, driverName: e.target.value })}/></label><label>Registration number<input required value={truckForm.plateNo} onChange={e => setTruckForm({ ...truckForm, plateNo: e.target.value.toUpperCase() })} placeholder="KA01AB1234"/></label><label>Capacity (kg)<input required type="number" min="1" value={truckForm.capacityKg} onChange={e => setTruckForm({ ...truckForm, capacityKg: e.target.value })}/></label><button className="button button-primary" disabled={!canManage || busy}>{canManage ? "Register vehicle" : "Fleet manager access required"}</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Fleet register</h3><p>{trucks.length} registered vehicles · {demoTruckCount}/20 demo trucks ready</p></div>{demoTruckCount < 20 && <button className="button button-dark" disabled={!canManage || busy} onClick={prepareDemoFleet}>{canManage ? "＋ Add 20 demo trucks" : "Fleet manager access required"}</button>}</div><div className="table-wrap"><table><thead><tr><th>REGISTRATION</th><th>DRIVER</th><th>CAPACITY</th><th>STATUS</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{trucks.map(t => <tr key={t._id}><td><strong>{t.plateNo}</strong></td><td>{t.driverName}</td><td>{Number(t.capacityKg).toLocaleString()} kg</td><td><select className="compact-select" disabled={!canManage} value={t.status} onChange={e => changeTruckStatus(t._id, e.target.value)}><option value="active">active</option><option value="inactive">inactive</option><option value="maintenance">maintenance</option></select></td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/trucks/${t._id}`, `truck ${t.plateNo}`, "Its shipments, telemetry, incidents, alerts, assignments, and uploaded datasets containing its readings will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!trucks.length && <Empty>No vehicles registered yet.</Empty>}</div></section></div></>}
 
@@ -546,7 +627,7 @@ function Workspace() {
           </section>
         </div>
         <section className="panel full-panel">
-          <div className="panel-heading"><div><h3>Live truck route</h3><p>{simulationTruck ? `${simulationTruck.plateNo} · ${simulationRoute.name}` : `Random truck from 20 demo trucks · ${simulationRoute.name}`}</p></div><Pill kind={isSimulating ? "active" : "neutral"}>{isSimulating ? "In transit" : "Simulation idle"}</Pill></div>
+          <div className="panel-heading"><div><h3>Live truck route</h3><p>{simulationTruck ? `${simulationTruck.plateNo} · ${simulationRoute.name}` : `Random truck from 20 demo trucks · ${simulationRoute.name}`} · accelerated simulation, not live GPS</p></div><Pill kind={isSimulating ? "active" : "neutral"}>{isSimulating ? "In transit" : "Simulation idle"}</Pill></div>
           {simulationAlerts.length > 0 && <div className="simulation-alert" role="status" aria-live="polite">
             <span className="simulation-alert-icon">!</span>
             <div className="simulation-alert-content">
@@ -557,7 +638,7 @@ function Workspace() {
             <button type="button" aria-label="Dismiss simulation alerts" onClick={() => setSimulationAlerts([])}>×</button>
           </div>}
           <div className="route-display">
-            <RouteMap route={simulationRoute} truck={simulationTruck}/>
+            <RouteMap route={simulationRoute} truck={simulationTruck} animationDuration={SIMULATION_INTERVAL_MS}/>
             <div className="route-rail" aria-label={`Truck route progress: ${Math.round(travelProgress * 100)} percent`}>
               <span className="route-rail-label">{simulationRoute.name.split(" → ")[0]}</span>
               <div className="route-rail-track">
@@ -573,9 +654,9 @@ function Workspace() {
         </section>
           <section className="panel full-panel"><div className="panel-heading"><div><h3>Sensor trends</h3><p>Recent readings for the selected shipment · auto-refreshes every 15 seconds</p></div></div><div className="trend-grid"><TrendChart data={telemetry.filter(x => !selectedShipment || x.shipmentId?._id === selectedShipment)} field="temperature" title="Temperature trend" unit="°C"/><TrendChart data={telemetry.filter(x => !selectedShipment || x.shipmentId?._id === selectedShipment)} field="humidity" title="Humidity trend" unit="%"/></div></section>
           <section className="panel full-panel"><div className="panel-heading"><div><h3>Uploaded datasets & simulation</h3><p>CSV rows saved in MongoDB Atlas and replayed through incident detection</p></div><Pill kind="neutral">{uploads.length} datasets</Pill></div><div className="table-wrap"><table><thead><tr><th>DATASET</th><th>ROWS</th><th>SIMULATION</th><th>UPLOADED</th><th>ACTION</th></tr></thead><tbody>{uploads.map(upload => <tr key={upload._id}><td><strong>{upload.fileName}</strong></td><td>{upload.validRows} valid · {upload.rejectedRows} rejected</td><td><Pill kind={upload.simulationStatus}>{upload.simulationStatus.replaceAll("_", " ")}</Pill>{upload.simulationStatus !== "completed" && <small className="subline">{upload.simulationProcessedRows}/{upload.validRows} replayed</small>}</td><td>{new Date(upload.uploadTime).toLocaleString()}</td><td className="action-cell">{upload.simulationStatus !== "completed" && <button className="button button-dark" disabled={busy || !canManage} onClick={() => run(() => simulateDataset(upload))}>{upload.simulationProcessedRows ? "Continue simulation" : "Run simulation"}</button>}{canDeleteTelemetry && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/telemetry/uploads/${upload._id}`, `uploaded dataset ${upload.fileName}`, "All its telemetry readings and generated incidents, alerts, assignments, and audit entries will also be deleted.")}>Delete</button>}</td></tr>)}</tbody></table>{!uploads.length && <Empty>Upload a CSV dataset to save it to Atlas and run a simulation.</Empty>}</div></section>
-          <section className="panel full-panel"><div className="panel-heading"><div><h3>Telemetry history & GPS positions</h3><p>Most recent 100 sensor readings</p></div><label className="upload-label">Upload CSV dataset<input type="file" accept=".csv,text/csv" onChange={importFile}/></label></div><div className="table-wrap"><table><thead><tr><th>TIME</th><th>SHIPMENT</th><th>TEMP</th><th>HUMIDITY</th><th>FUEL / BRAKES</th><th>GPS</th>{canDeleteTelemetry && <th>ACTION</th>}</tr></thead><tbody>{telemetry.slice(0, 100).map(x => <tr key={x._id}><td>{new Date(x.timestamp).toLocaleString()}</td><td>{x.shipmentId?.origin || ""} → {x.shipmentId?.destination || ""}</td><td><strong>{x.temperature ?? "—"}°C</strong></td><td>{x.humidity ?? "—"}%</td><td>{x.fuelLevel ?? "—"}% · {x.brakeStatus}</td><td>{x.location?.latitude != null && x.location?.longitude != null ? <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${x.location.latitude},${x.location.longitude}`}>{x.location.latitude.toFixed(4)}, {x.location.longitude.toFixed(4)} ↗</a> : "No GPS"}</td>{canDeleteTelemetry && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/telemetry/${x._id}`, `telemetry reading from ${new Date(x.timestamp).toLocaleString()}`, "Its generated incidents and related alert history will also be deleted. If it belongs to a CSV dataset, the entire dataset and its readings will be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!telemetry.length && <Empty>Telemetry history will appear here.</Empty>}</div></section></>}
+          <section className="panel full-panel"><div className="panel-heading"><div><h3>Telemetry history & GPS positions</h3><p>Most recent 100 sensor readings</p></div><label className="upload-label">Upload CSV dataset<input type="file" accept=".csv,text/csv" onChange={importFile}/></label></div><div className="table-wrap telemetry-history-scroll"><table><thead><tr><th>TIME</th><th>SHIPMENT</th><th>TEMP</th><th>HUMIDITY</th><th>FUEL / BRAKES</th><th>GPS</th>{canDeleteTelemetry && <th>ACTION</th>}</tr></thead><tbody>{telemetry.slice(0, 100).map(x => <tr key={x._id}><td>{new Date(x.timestamp).toLocaleString()}</td><td>{x.shipmentId?.origin || ""} → {x.shipmentId?.destination || ""}</td><td><strong>{x.temperature ?? "—"}°C</strong></td><td>{x.humidity ?? "—"}%</td><td>{x.fuelLevel ?? "—"}% · {x.brakeStatus}</td><td>{x.location?.latitude != null && x.location?.longitude != null ? <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${x.location.latitude},${x.location.longitude}`}>{x.location.latitude.toFixed(4)}, {x.location.longitude.toFixed(4)} ↗</a> : "No GPS"}</td>{canDeleteTelemetry && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/telemetry/${x._id}`, `telemetry reading from ${new Date(x.timestamp).toLocaleString()}`, "Its generated incidents and related alert history will also be deleted. If it belongs to a CSV dataset, the entire dataset and its readings will be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!telemetry.length && <Empty>Telemetry history will appear here.</Empty>}</div></section></>}
 
-      {section === "incidents" && <><div className="section-intro"><div><div className="eyebrow">ALERT & RESPONSE CENTER</div><h2>Incident management</h2><p>Automatically detected breaches and manually reported events.</p></div><Pill kind={openIncidents.length ? "warning" : "success"}>{openIncidents.length} open incidents</Pill></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Report an incident</h3><p>Create a manual operational event</p></div></div><form className="form-stack" onSubmit={createIncident}><label>Shipment<select required value={incidentForm.shipmentId} onChange={e => setIncidentForm({ ...incidentForm, shipmentId: e.target.value })}><option value="">Select shipment</option>{shipments.map(s => <option key={s._id} value={s._id}>{s.origin} → {s.destination}</option>)}</select></label><label>Incident type<select value={incidentForm.type} onChange={e => setIncidentForm({ ...incidentForm, type: e.target.value })}>{["temperature_breach", "door_open", "low_fuel", "accident", "brake_problem", "other"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Severity<select value={incidentForm.severity} onChange={e => setIncidentForm({ ...incidentForm, severity: e.target.value })}>{["low", "medium", "high", "critical"].map(x => <option key={x}>{x}</option>)}</select></label><label>Description<textarea required rows="3" value={incidentForm.description} onChange={e => setIncidentForm({ ...incidentForm, description: e.target.value })} placeholder="Describe what happened"/></label><button className="button button-primary" disabled={!canManage || busy || !shipments.length}>Create incident</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Alert delivery log</h3><p>Dashboard and email notification events</p></div></div><div className="list-rows alert-delivery-scroll">{alerts.map(a => <div className="list-row" key={a._id}><div className="event-icon">✉</div><div className="row-main"><strong>{a.alertType.replaceAll("_", " ")}</strong><small>{a.message}</small></div><Pill kind={a.status}>{a.status}</Pill>{canManage && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/meta/alerts/${a._id}`, "alert event", "Its linked audit entry will also be deleted.")}>Delete</button>}</div>)}{!alerts.length && <Empty>No alert events yet.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Incident register</h3><p>Showing {filteredIncidents.length} of {incidents.length} incidents · assign teams and update response status</p></div><select className="incident-truck-filter" aria-label="Filter incidents by truck" value={incidentTruckFilter} onChange={e => setIncidentTruckFilter(e.target.value)}><option value="">All trucks</option>{trucks.map(truck => <option key={truck._id} value={truck._id}>{truck.plateNo} · {truck.driverName}</option>)}</select></div><div className="table-wrap incident-register-scroll"><table><thead><tr><th>EVENT</th><th>SHIPMENT</th><th>SEVERITY</th><th>ASSIGNED TEAM</th><th>STATUS</th><th>DETECTED</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{filteredIncidents.map(x => <tr key={x._id}><td><strong>{x.type.replaceAll("_", " ")}</strong><small className="subline">{x.description}</small></td><td>{x.shipmentId?.origin} → {x.shipmentId?.destination}</td><td><Pill kind={x.severity}>{x.severity}</Pill></td><td><select className="compact-select" disabled={!canManage} value={x.assignedTeamId?._id || ""} onChange={e => assignIncident(x._id, e.target.value)}><option value="">Unassigned</option>{teams.map(t => <option key={t._id} value={t._id}>{t.teamName}</option>)}</select></td><td><select className="compact-select" disabled={!canManage && profile?.role !== "action_team_member"} value={x.status} onChange={e => updateIncident(x._id, e.target.value)}>{INCIDENT_STATUSES.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}</select></td><td>{new Date(x.detectedAt).toLocaleString()}</td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/${x._id}`, `incident ${x.type.replaceAll("_", " ")}`, "Its alert events, team assignments, and audit history will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!filteredIncidents.length && <Empty>{incidentTruckFilter ? "No incidents for this truck." : "No incidents to show."}</Empty>}</div></section></>}
+      {section === "incidents" && <><div className="section-intro"><div><div className="eyebrow">ALERT & RESPONSE CENTER</div><h2>Incident management</h2><p>Automatically detected breaches and manually reported events.</p></div><Pill kind={openIncidents.length ? "warning" : "success"}>{openIncidents.length} open incidents</Pill></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Report an incident</h3><p>Create a manual operational event</p></div></div><form className="form-stack" onSubmit={createIncident}><label>Shipment<select required value={incidentForm.shipmentId} onChange={e => setIncidentForm({ ...incidentForm, shipmentId: e.target.value })}><option value="">Select shipment</option>{shipments.map(s => <option key={s._id} value={s._id}>{s.origin} → {s.destination}</option>)}</select></label><label>Incident type<select value={incidentForm.type} onChange={e => setIncidentForm({ ...incidentForm, type: e.target.value })}>{["temperature_breach", "door_open", "low_fuel", "accident", "brake_problem", "other"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Severity<select value={incidentForm.severity} onChange={e => setIncidentForm({ ...incidentForm, severity: e.target.value })}>{["low", "medium", "high", "critical"].map(x => <option key={x}>{x}</option>)}</select></label><label>Description<textarea required rows="3" value={incidentForm.description} onChange={e => setIncidentForm({ ...incidentForm, description: e.target.value })} placeholder="Describe what happened"/></label><button className="button button-primary" disabled={!canManage || busy || !shipments.length}>Create incident</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Alert delivery log</h3><p>Dashboard and email notification events</p></div></div><div className="list-rows alert-delivery-scroll">{alerts.map(a => <div className="list-row" key={a._id}><div className="event-icon">✉</div><div className="row-main"><strong>{a.alertType.replaceAll("_", " ")}</strong><small>{a.message}</small><small className="alert-recipient">Email recipient: {a.recipients?.length ? a.recipients.join(", ") : "No email recipient configured"}</small></div><Pill kind={a.status}>{a.status}</Pill>{canManage && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/meta/alerts/${a._id}`, "alert event", "Its linked audit entry will also be deleted.")}>Delete</button>}</div>)}{!alerts.length && <Empty>No alert events yet.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Incident register</h3><p>Showing {filteredIncidents.length} of {incidents.length} incidents · assign teams and update response status</p></div><select className="incident-truck-filter" aria-label="Filter incidents by truck" value={incidentTruckFilter} onChange={e => setIncidentTruckFilter(e.target.value)}><option value="">All trucks</option>{trucks.map(truck => <option key={truck._id} value={truck._id}>{truck.plateNo} · {truck.driverName}</option>)}</select></div><div className="table-wrap incident-register-scroll"><table><thead><tr><th>EVENT</th><th>SHIPMENT</th><th>SEVERITY</th><th>ASSIGNED TEAM</th><th>STATUS</th><th>DETECTED</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{filteredIncidents.map(x => <tr key={x._id}><td><strong>{x.type.replaceAll("_", " ")}</strong><small className="subline">{x.description}</small></td><td>{x.shipmentId?.origin} → {x.shipmentId?.destination}</td><td><Pill kind={x.severity}>{x.severity}</Pill></td><td><select className="compact-select" disabled={!canManage} value={x.assignedTeamId?._id || ""} onChange={e => assignIncident(x._id, e.target.value)}><option value="">Unassigned</option>{teams.map(t => <option key={t._id} value={t._id}>{t.teamName}</option>)}</select></td><td><select className="compact-select" disabled={!canManage && profile?.role !== "action_team_member"} value={x.status} onChange={e => updateIncident(x._id, e.target.value)}>{INCIDENT_STATUSES.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}</select></td><td>{new Date(x.detectedAt).toLocaleString()}</td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/${x._id}`, `incident ${x.type.replaceAll("_", " ")}`, "Its alert events, team assignments, and audit history will also be deleted.")}>Delete</button></td>}</tr>)}</tbody></table>{!filteredIncidents.length && <Empty>{incidentTruckFilter ? "No incidents for this truck." : "No incidents to show."}</Empty>}</div></section></>}
 
       {section === "teams" && <><div className="section-intro"><div><div className="eyebrow">RESPONSE COORDINATION</div><h2>Response teams</h2><p>Manage specialist teams and view incident assignment history.</p></div></div><div className="two-col"><section className="panel"><div className="panel-heading"><div><h3>Create response team</h3><p>Set up a routing destination for incidents</p></div></div><form className="form-stack" onSubmit={createTeam}><label>Team name<input required value={teamForm.teamName} onChange={e => setTeamForm({ ...teamForm, teamName: e.target.value })}/></label><label>Team type<select value={teamForm.teamType} onChange={e => setTeamForm({ ...teamForm, teamType: e.target.value })}>{["cold_chain", "fuel_support", "emergency_response", "maintenance", "general"].map(x => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label>Contact email<input type="email" value={teamForm.email} onChange={e => setTeamForm({ ...teamForm, email: e.target.value })}/></label><label>Contact phone<input value={teamForm.phone} onChange={e => setTeamForm({ ...teamForm, phone: e.target.value })}/></label><label>Description<textarea rows="2" value={teamForm.description} onChange={e => setTeamForm({ ...teamForm, description: e.target.value })}/></label><button className="button button-primary" disabled={!canManage || busy}>Create team</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Team directory</h3><p>{teams.length} registered response teams</p></div></div><div className="team-grid">{teams.map(t => <article className="team-card" key={t._id}><div className="team-symbol">♧</div><div><strong>{t.teamName}</strong><small>{t.teamType.replaceAll("_", " ")}</small><p>{t.description || "No description provided."}</p><small>{t.contactInfo?.email || "No email configured"}</small>{canManage && <button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/teams/${t._id}`, `response team ${t.teamName}`, "Its assignment history will be deleted and its incidents will become unassigned.")}>Delete</button>}</div><Pill kind={t.status}>{t.status}</Pill></article>)}{!teams.length && <Empty>No response teams configured.</Empty>}</div></section></div><section className="panel full-panel"><div className="panel-heading"><div><h3>Assignment history</h3><p>Incident routing and reassignment records</p></div></div><div className="table-wrap"><table><thead><tr><th>INCIDENT</th><th>TEAM</th><th>ROLE</th><th>STATUS</th><th>ASSIGNED</th>{canManage && <th>ACTION</th>}</tr></thead><tbody>{assignments.map(a => <tr key={a._id}><td>{a.incidentId?.type?.replaceAll("_", " ") || "Incident"}</td><td>{a.teamId?.teamName || "—"}</td><td>{a.role}</td><td><Pill kind={a.status}>{a.status}</Pill></td><td>{new Date(a.assignedAt).toLocaleString()}</td>{canManage && <td><button className="button button-danger delete-action" disabled={busy} onClick={() => deleteRecord(`/api/incidents/meta/assignments/${a._id}`, "team assignment record", "If no other active assignment exists, the incident will become unassigned.")}>Delete</button></td>}</tr>)}</tbody></table>{!assignments.length && <Empty>No assignment history yet.</Empty>}</div></section></>}
 
