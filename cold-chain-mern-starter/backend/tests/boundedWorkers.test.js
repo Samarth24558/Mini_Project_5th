@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runBoundedWorkers } from "../src/services/boundedWorkers.js";
+import { runBoundedWorkers } from "../src/subjects/os/boundedWorkers.js";
 
 test("bounded workers cap concurrency while retaining source order", async () => {
   let active = 0;

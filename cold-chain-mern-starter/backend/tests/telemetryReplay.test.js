@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { replayTelemetryBatch } from "../src/services/telemetryReplay.js";
+import { replayTelemetryBatch } from "../src/subjects/dsa/telemetryReplay.js";
 
 test("replay evaluates every row, including repeated incident types, in supplied timestamp order", async () => {
   const readings = [

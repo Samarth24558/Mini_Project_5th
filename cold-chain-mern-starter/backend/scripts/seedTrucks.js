@@ -1,7 +1,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
-import { connectDB } from "../src/config/db.js";
-import Truck from "../src/models/Truck.js";
+import { connectDB } from "../src/subjects/dbms/db.js";
+import Truck from "../src/subjects/dbms/models/Truck.js";
 
 const demoTrucks = [
   { driverName: "Demo Driver 1", plateNo: "KA01CC1001", capacityKg: 5000, status: "active" },

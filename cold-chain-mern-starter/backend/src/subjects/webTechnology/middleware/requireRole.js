@@ -1,4 +1,4 @@
-import User from "../models/User.js";
+import User from "../../dbms/models/User.js";
 
 export function requireRole(...roles) {
   return async (req, res, next) => {

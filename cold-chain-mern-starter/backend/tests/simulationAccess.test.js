@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hasSimulationAccess } from "../src/middleware/requireRole.js";
+import { hasSimulationAccess } from "../src/subjects/webTechnology/middleware/requireRole.js";
 
 test("fleet managers and administrators can always run simulations", () => {
   assert.equal(hasSimulationAccess({ status: "active", role: "fleet_manager" }), true);

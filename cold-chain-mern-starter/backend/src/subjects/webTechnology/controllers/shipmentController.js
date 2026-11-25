@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
-import Shipment from "../models/Shipment.js";
-import Truck from "../models/Truck.js";
-import { deleteShipmentBranch, withDeletionTransaction } from "../services/recordDeletion.js";
+import Shipment from "../../dbms/models/Shipment.js";
+import Truck from "../../dbms/models/Truck.js";
+import { deleteShipmentBranch, withDeletionTransaction } from "../../dbms/recordDeletion.js";
 
 const shipmentStatuses = ["scheduled", "in_transit", "delayed", "delivered", "cancelled"];
 

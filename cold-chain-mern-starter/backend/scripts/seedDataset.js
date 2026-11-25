@@ -4,11 +4,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mongoose from "mongoose";
-import User from "../src/models/User.js";
-import Truck from "../src/models/Truck.js";
-import Shipment from "../src/models/Shipment.js";
-import Upload from "../src/models/Upload.js";
-import TelemetryRecord from "../src/models/TelemetryRecord.js";
+import User from "../src/subjects/dbms/models/User.js";
+import Truck from "../src/subjects/dbms/models/Truck.js";
+import Shipment from "../src/subjects/dbms/models/Shipment.js";
+import Upload from "../src/subjects/dbms/models/Upload.js";
+import TelemetryRecord from "../src/subjects/dbms/models/TelemetryRecord.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 

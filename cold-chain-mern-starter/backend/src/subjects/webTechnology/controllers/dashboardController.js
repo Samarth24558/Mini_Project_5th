@@ -1,8 +1,8 @@
-import Truck from "../models/Truck.js";
-import Shipment from "../models/Shipment.js";
-import Incident from "../models/Incident.js";
-import TelemetryRecord from "../models/TelemetryRecord.js";
-import AlertEvent from "../models/AlertEvent.js";
+import Truck from "../../dbms/models/Truck.js";
+import Shipment from "../../dbms/models/Shipment.js";
+import Incident from "../../dbms/models/Incident.js";
+import TelemetryRecord from "../../dbms/models/TelemetryRecord.js";
+import AlertEvent from "../../dbms/models/AlertEvent.js";
 
 export async function getDashboard(req, res) {
   try {

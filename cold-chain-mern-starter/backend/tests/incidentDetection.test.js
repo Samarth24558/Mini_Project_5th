@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyTelemetry } from "../src/services/incidentDetection.js";
+import { classifyTelemetry } from "../src/subjects/dsa/incidentDetection.js";
 
 test("temperature inside configured default range does not create a breach", () => {
   const events = classifyTelemetry({ temperature: 4.5, doorStatus: "closed", fuelLevel: 80, brakeStatus: "normal" });
@@ -88,7 +88,7 @@ test("simulated door alerts use the accelerated simulation threshold", () => {
 });
 
 test("incident types route to their specialist response teams", async () => {
-  const { teamTypeForIncident } = await import("../src/services/incidentDetection.js");
+  const { teamTypeForIncident } = await import("../src/subjects/dsa/incidentDetection.js");
   assert.equal(teamTypeForIncident("temperature_breach"), "cold_chain");
   assert.equal(teamTypeForIncident("low_fuel"), "fuel_support");
   assert.equal(teamTypeForIncident("brake_problem"), "maintenance");

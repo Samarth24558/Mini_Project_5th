@@ -3,8 +3,8 @@ import dns from "node:dns";
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 import "dotenv/config";
 import mongoose from "mongoose";
-import { connectDB } from "../src/config/db.js";
-import Team from "../src/models/Team.js";
+import { connectDB } from "../src/subjects/dbms/db.js";
+import Team from "../src/subjects/dbms/models/Team.js";
 
 const teams = [
   {

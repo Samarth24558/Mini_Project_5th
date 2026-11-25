@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canTransitionIncidentStatus } from "../src/controllers/incidentController.js";
+import { canTransitionIncidentStatus } from "../src/subjects/webTechnology/controllers/incidentController.js";
 
 test("incident workflow permits forward response and resolution transitions", () => {
   assert.equal(canTransitionIncidentStatus("new", "acknowledged"), true);

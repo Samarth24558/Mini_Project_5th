@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
-import Truck from "../models/Truck.js";
-import Shipment from "../models/Shipment.js";
-import { deleteShipmentBranch, withDeletionTransaction } from "../services/recordDeletion.js";
+import Truck from "../../dbms/models/Truck.js";
+import Shipment from "../../dbms/models/Shipment.js";
+import { deleteShipmentBranch, withDeletionTransaction } from "../../dbms/recordDeletion.js";
 
 export async function getTrucks(req, res) {
   try {
@@ -53,7 +53,7 @@ export async function updateTruck(req, res) {
     if (updates.plateNo) updates.plateNo = String(updates.plateNo).trim().toUpperCase();
     if (updates.driverName) updates.driverName = String(updates.driverName).trim();
     if (updates.status && updates.status !== "active") {
-      const Shipment = (await import("../models/Shipment.js")).default;
+      const Shipment = (await import("../../dbms/models/Shipment.js")).default;
       const activeShipment = await Shipment.exists({ truckId: req.params.id, status: "in_transit" });
       if (activeShipment) return res.status(409).json({ success: false, message: "Truck is on an in-transit shipment and cannot be taken out of service" });
     }

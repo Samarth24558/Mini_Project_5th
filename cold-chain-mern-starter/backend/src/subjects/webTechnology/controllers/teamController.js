@@ -1,8 +1,8 @@
 import mongoose from "mongoose";
-import Team from "../models/Team.js";
-import Incident from "../models/Incident.js";
-import TeamAssignment from "../models/TeamAssignment.js";
-import { withDeletionTransaction } from "../services/recordDeletion.js";
+import Team from "../../dbms/models/Team.js";
+import Incident from "../../dbms/models/Incident.js";
+import TeamAssignment from "../../dbms/models/TeamAssignment.js";
+import { withDeletionTransaction } from "../../dbms/recordDeletion.js";
 
 export async function getTeams(_req, res) {
   try { const data = await Team.find().sort({ teamName: 1 }); res.json({ success: true, count: data.length, data }); }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { csvCell, csvDocument } from "../src/services/csvReport.js";
+import { csvCell, csvDocument } from "../src/subjects/dsa/csvReport.js";
 
 test("CSV reports escape quotes and neutralize spreadsheet formulas", () => {
   assert.equal(csvCell('route "A"'), '"route ""A"""');

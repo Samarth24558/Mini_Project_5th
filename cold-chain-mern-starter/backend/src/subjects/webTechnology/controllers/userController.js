@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
-import AuditLog from "../models/AuditLog.js";
-import Team from "../models/Team.js";
-import TeamAssignment from "../models/TeamAssignment.js";
-import Upload from "../models/Upload.js";
-import User from "../models/User.js";
+import AuditLog from "../../dbms/models/AuditLog.js";
+import Team from "../../dbms/models/Team.js";
+import TeamAssignment from "../../dbms/models/TeamAssignment.js";
+import Upload from "../../dbms/models/Upload.js";
+import User from "../../dbms/models/User.js";
 import { sendRoleAssignmentEmail } from "../services/emailService.js";
-import { deleteUploadBranch, withDeletionTransaction } from "../services/recordDeletion.js";
+import { deleteUploadBranch, withDeletionTransaction } from "../../dbms/recordDeletion.js";
 
 export async function syncProfile(req, res) {
   try {

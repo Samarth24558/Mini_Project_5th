@@ -1,18 +1,18 @@
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
-import TelemetryRecord from "../models/TelemetryRecord.js";
-import Shipment from "../models/Shipment.js";
-import Truck from "../models/Truck.js";
-import Upload from "../models/Upload.js";
+import TelemetryRecord from "../../dbms/models/TelemetryRecord.js";
+import Shipment from "../../dbms/models/Shipment.js";
+import Truck from "../../dbms/models/Truck.js";
+import Upload from "../../dbms/models/Upload.js";
 import {
   createIncidentsForTelemetryInSession,
   deliverPersistedIncidentAlerts,
   detectIncidentsForTelemetry
-} from "../services/incidentDetection.js";
+} from "../../dsa/incidentDetection.js";
 import { publishTelemetryEvent } from "../services/telemetryEvents.js";
-import { deleteTelemetryBranch, deleteUploadBranch, withDeletionTransaction, withMongoTransaction } from "../services/recordDeletion.js";
-import { runBoundedWorkers } from "../services/boundedWorkers.js";
-import { replayTelemetryBatch } from "../services/telemetryReplay.js";
+import { deleteTelemetryBranch, deleteUploadBranch, withDeletionTransaction, withMongoTransaction } from "../../dbms/recordDeletion.js";
+import { runBoundedWorkers } from "../../os/boundedWorkers.js";
+import { replayTelemetryBatch } from "../../dsa/telemetryReplay.js";
 
 const SIMULATION_FLEET_SIZE = 20;
 const SIMULATION_BATCH_SIZE = 1;

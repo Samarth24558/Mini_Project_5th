@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
-import Incident from "../models/Incident.js";
-import AlertEvent from "../models/AlertEvent.js";
-import AuditLog from "../models/AuditLog.js";
-import Team from "../models/Team.js";
-import TeamAssignment from "../models/TeamAssignment.js";
-import { deleteIncidentBranch, withDeletionTransaction, withMongoTransaction } from "../services/recordDeletion.js";
-import { createManualIncidentWorkflow } from "../services/incidentDetection.js";
+import Incident from "../../dbms/models/Incident.js";
+import AlertEvent from "../../dbms/models/AlertEvent.js";
+import AuditLog from "../../dbms/models/AuditLog.js";
+import Team from "../../dbms/models/Team.js";
+import TeamAssignment from "../../dbms/models/TeamAssignment.js";
+import { deleteIncidentBranch, withDeletionTransaction, withMongoTransaction } from "../../dbms/recordDeletion.js";
+import { createManualIncidentWorkflow } from "../../dsa/incidentDetection.js";
 
 const INCIDENT_STATUS_TRANSITIONS = {
   new: ["active", "acknowledged"],

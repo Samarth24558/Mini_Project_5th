@@ -1,5 +1,5 @@
 import { getAuth } from "@clerk/express";
-import User from "../models/User.js";
+import User from "../../dbms/models/User.js";
 
 export async function requireAuth(req, res, next) {
   try {

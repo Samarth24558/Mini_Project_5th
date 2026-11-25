@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { parseTelemetryFile } from "../src/utils/telemetryImport.js";
+import { parseTelemetryFile } from "../src/subjects/dsa/telemetryImport.js";
 
 test("CSV import preserves quoted commas and escaped quotes", async () => {
   const file = {

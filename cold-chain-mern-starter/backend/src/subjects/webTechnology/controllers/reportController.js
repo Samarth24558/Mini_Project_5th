@@ -1,7 +1,7 @@
-import Shipment from "../models/Shipment.js";
-import Incident from "../models/Incident.js";
-import TelemetryRecord from "../models/TelemetryRecord.js";
-import { csvDocument } from "../services/csvReport.js";
+import Shipment from "../../dbms/models/Shipment.js";
+import Incident from "../../dbms/models/Incident.js";
+import TelemetryRecord from "../../dbms/models/TelemetryRecord.js";
+import { csvDocument } from "../../dsa/csvReport.js";
 
 export async function exportReport(req, res) {
   try {

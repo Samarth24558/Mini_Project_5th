@@ -1,11 +1,11 @@
-import Incident from "../models/Incident.js";
-import Team from "../models/Team.js";
-import TeamAssignment from "../models/TeamAssignment.js";
-import AlertEvent from "../models/AlertEvent.js";
-import AuditLog from "../models/AuditLog.js";
-import Shipment from "../models/Shipment.js";
-import { sendIncidentEmail } from "./emailService.js";
-import { withMongoTransaction } from "./recordDeletion.js";
+import Incident from "../dbms/models/Incident.js";
+import Team from "../dbms/models/Team.js";
+import TeamAssignment from "../dbms/models/TeamAssignment.js";
+import AlertEvent from "../dbms/models/AlertEvent.js";
+import AuditLog from "../dbms/models/AuditLog.js";
+import Shipment from "../dbms/models/Shipment.js";
+import { sendIncidentEmail } from "../webTechnology/services/emailService.js";
+import { withMongoTransaction } from "../dbms/recordDeletion.js";
 
 const minTemp = Number(process.env.TEMP_MIN_C ?? 2);
 const maxTemp = Number(process.env.TEMP_MAX_C ?? 8);

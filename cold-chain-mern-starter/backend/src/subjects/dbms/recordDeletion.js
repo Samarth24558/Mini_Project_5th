@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
-import AlertEvent from "../models/AlertEvent.js";
-import AuditLog from "../models/AuditLog.js";
-import Incident from "../models/Incident.js";
-import Shipment from "../models/Shipment.js";
-import TeamAssignment from "../models/TeamAssignment.js";
-import TelemetryRecord from "../models/TelemetryRecord.js";
-import Upload from "../models/Upload.js";
+import AlertEvent from "./models/AlertEvent.js";
+import AuditLog from "./models/AuditLog.js";
+import Incident from "./models/Incident.js";
+import Shipment from "./models/Shipment.js";
+import TeamAssignment from "./models/TeamAssignment.js";
+import TelemetryRecord from "./models/TelemetryRecord.js";
+import Upload from "./models/Upload.js";
 
 function uniqueIds(ids) {
   return [...new Map(ids.filter(Boolean).map(id => [String(id), id])).values()];

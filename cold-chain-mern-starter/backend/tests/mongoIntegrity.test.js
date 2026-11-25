@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
-import Incident from "../src/models/Incident.js";
-import TelemetryRecord from "../src/models/TelemetryRecord.js";
-import TeamAssignment from "../src/models/TeamAssignment.js";
-import { withMongoTransaction } from "../src/services/recordDeletion.js";
+import Incident from "../src/subjects/dbms/models/Incident.js";
+import TelemetryRecord from "../src/subjects/dbms/models/TelemetryRecord.js";
+import TeamAssignment from "../src/subjects/dbms/models/TeamAssignment.js";
+import { withMongoTransaction } from "../src/subjects/dbms/recordDeletion.js";
 
 function fakeSession() {
   const state = { committed: false, aborted: false, ended: false };

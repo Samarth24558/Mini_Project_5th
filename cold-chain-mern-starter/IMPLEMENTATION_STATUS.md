@@ -13,6 +13,8 @@
 
 The handbook’s generic E3 section describes relational tables and SQL. This implementation deliberately retains MongoDB/Mongoose to match the approved MERN project design. It does not claim SQL foreign keys: relationship existence is checked in application workflows, Mongoose validates document constraints, and multi-document changes use MongoDB transactions. The target database must support transactions (MongoDB Atlas replica set or equivalent).
 
+Source is grouped under `backend/src/subjects/` and `frontend/src/subjects/` by OS, DSA, DBMS, and Web Technology. The backend startup path remains `src/server.js` for existing npm and Docker commands.
+
 ## Local verification
 
 Run from the project root:
@@ -27,7 +29,7 @@ npm run build
 
 The local automated suite does not require live email credentials or a database connection. Before presenting Gate 3 evidence, run the app with the approved Atlas, Clerk, and (if required) Gmail configuration; capture the test output and demonstrate a valid import/replay, a breach and team assignment, status/audit changes, and report export. No physical IoT sensor or GPS hardware has been tested.
 
-At the last local run, all 23 backend tests and 3 frontend tests passed, the Vite production build completed, and `npm audit` reported zero vulnerabilities. The build emits a separate ExcelJS chunk for on-demand XLSX imports.
+At the last local run, all 23 backend tests and 5 frontend tests passed, the Vite production build completed, and `npm audit` reported zero vulnerabilities. The build emits a separate ExcelJS chunk for on-demand XLSX imports.
 
 ## Production limitations
 

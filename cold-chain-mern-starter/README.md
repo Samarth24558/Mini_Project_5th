@@ -24,6 +24,24 @@ MERN application for refrigerated fleet operations. It builds on the supplied pr
 - Clerk authentication
 - Gmail account with 2-Step Verification and an App Password (optional email notifications)
 
+## Source organization by subject
+
+The source is grouped into subject folders so the core concepts are easy to locate:
+
+```text
+backend/src/subjects/
+  os/              bounded worker-pool scheduling
+  dsa/             telemetry rules, ordered replay, CSV algorithms
+  dbms/            MongoDB connection, schemas, indexes, transactions
+  webTechnology/   Express server, routes, controllers, middleware
+
+frontend/src/subjects/
+  dsa/             route geometry and CSV/XLSX parsing
+  webTechnology/   React entry point, dashboard, and styles
+```
+
+The backend's `src/server.js` remains as the stable startup entry point and forwards to the Web Technology server module. The subject folders express the primary responsibility; some Web Technology controllers call DBMS and DSA modules as part of normal application integration.
+
 ## Prerequisites
 
 - Node.js LTS and npm
