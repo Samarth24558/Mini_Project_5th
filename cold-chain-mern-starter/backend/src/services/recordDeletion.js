@@ -11,8 +11,8 @@ function uniqueIds(ids) {
   return [...new Map(ids.filter(Boolean).map(id => [String(id), id])).values()];
 }
 
-export async function withDeletionTransaction(action) {
-  const session = await mongoose.startSession();
+export async function withMongoTransaction(action, startSession = () => mongoose.startSession()) {
+  const session = await startSession();
   try {
     let result;
     await session.withTransaction(async () => {
@@ -23,6 +23,8 @@ export async function withDeletionTransaction(action) {
     await session.endSession();
   }
 }
+
+export const withDeletionTransaction = withMongoTransaction;
 
 export async function deleteIncidentBranch(incidentIds, session) {
   const ids = uniqueIds(incidentIds);

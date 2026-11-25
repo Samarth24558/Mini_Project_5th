@@ -1,12 +1,7 @@
 import Shipment from "../models/Shipment.js";
 import Incident from "../models/Incident.js";
 import TelemetryRecord from "../models/TelemetryRecord.js";
-
-const csv = value => {
-  let text = String(value ?? "");
-  if (/^[\s]*[=+@\-\t\r]/.test(text)) text = `'${text}`;
-  return `"${text.replaceAll('"', '""')}"`;
-};
+import { csvDocument } from "../services/csvReport.js";
 
 export async function exportReport(req, res) {
   try {
@@ -27,7 +22,7 @@ export async function exportReport(req, res) {
       headers = ["timestamp", "shipmentId", "route", "temperatureC", "humidityPercent", "doorStatus", "fuelPercent", "brakeStatus", "latitude", "longitude", "simulated"];
       rows = docs.map(x => [x.timestamp.toISOString(), x.shipmentId?._id, `${x.shipmentId?.origin ?? ""} -> ${x.shipmentId?.destination ?? ""}`, x.temperature, x.humidity, x.doorStatus, x.fuelLevel, x.brakeStatus, x.location?.latitude, x.location?.longitude, x.isSimulated]);
     }
-    const body = [headers, ...rows].map(row => row.map(csv).join(",")).join("\r\n");
+    const body = csvDocument(headers, rows);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="cold-chain-${type}-report.csv"`);
     res.send(`\uFEFF${body}`);

@@ -1,14 +1,27 @@
 import mongoose from "mongoose";
+import { randomUUID } from "node:crypto";
 import TelemetryRecord from "../models/TelemetryRecord.js";
 import Shipment from "../models/Shipment.js";
 import Truck from "../models/Truck.js";
 import Upload from "../models/Upload.js";
-import { classifyTelemetry, detectIncidentsForTelemetry } from "../services/incidentDetection.js";
+import {
+  createIncidentsForTelemetryInSession,
+  deliverPersistedIncidentAlerts,
+  detectIncidentsForTelemetry
+} from "../services/incidentDetection.js";
 import { publishTelemetryEvent } from "../services/telemetryEvents.js";
-import { deleteTelemetryBranch, deleteUploadBranch, withDeletionTransaction } from "../services/recordDeletion.js";
+import { deleteTelemetryBranch, deleteUploadBranch, withDeletionTransaction, withMongoTransaction } from "../services/recordDeletion.js";
+import { runBoundedWorkers } from "../services/boundedWorkers.js";
+import { replayTelemetryBatch } from "../services/telemetryReplay.js";
 
 const SIMULATION_FLEET_SIZE = 20;
 const SIMULATION_BATCH_SIZE = 1;
+const DEFAULT_SIMULATION_ROUTES = [
+  { origin: "Bengaluru", destination: "Mysuru" },
+  { origin: "Chennai", destination: "Bengaluru" },
+  { origin: "Hyderabad", destination: "Vijayawada" },
+  { origin: "Mumbai", destination: "Pune" }
+];
 
 function validOptionalNumber(value, min, max) {
   if (value === undefined || value === null || value === "") return true;
@@ -21,11 +34,15 @@ async function saveReading(input, uploadId = null, sourceRowNumber = null, evalu
   if (!shipment) throw Object.assign(new Error(`Shipment not found: ${input.shipmentId}`), { status: 404 });
   const timestamp = input.timestamp ? new Date(input.timestamp) : new Date();
   if (Number.isNaN(timestamp.getTime())) throw Object.assign(new Error("Invalid timestamp"), { status: 400 });
-  const reading = await TelemetryRecord.create({
+  const doorOpenSince = input.doorStatus === "open"
+    ? await getDoorOpenSince(input.shipmentId, timestamp)
+    : null;
+  const readingData = {
     shipmentId: input.shipmentId,
     uploadId,
     sourceRowNumber,
     timestamp,
+    doorOpenSince,
     temperature: input.temperature === "" || input.temperature == null ? null : Number(input.temperature),
     humidity: input.humidity === "" || input.humidity == null ? null : Number(input.humidity),
     doorStatus: input.doorStatus || "unknown",
@@ -34,18 +51,52 @@ async function saveReading(input, uploadId = null, sourceRowNumber = null, evalu
     location: input.location || {},
     sourceData: input.sourceData || null,
     isSimulated: input.isSimulated ?? false
-  });
-  const incidents = evaluate ? await detectIncidentsForTelemetry(reading) : [];
+  };
+  let reading;
+  let incidents = [];
+  if (evaluate) {
+    const saved = await withMongoTransaction(async session => {
+      const linkedShipment = await Shipment.findById(input.shipmentId).session(session);
+      if (!linkedShipment) throw Object.assign(new Error(`Shipment not found: ${input.shipmentId}`), { status: 404 });
+      const [createdReading] = await TelemetryRecord.create([readingData], { session });
+      const incidentResult = await createIncidentsForTelemetryInSession(createdReading, session);
+      if (!incidentResult) throw Object.assign(new Error(`Shipment not found: ${input.shipmentId}`), { status: 404 });
+      return { reading: createdReading, incidentResult };
+    });
+    reading = saved.reading;
+    incidents = saved.incidentResult.incidents;
+    await deliverPersistedIncidentAlerts(saved.incidentResult.persistedEvents);
+  } else {
+    reading = await TelemetryRecord.create(readingData);
+  }
   if (evaluate && publishEvent) publishTelemetryEvent({ shipmentId: String(reading.shipmentId), readingId: String(reading._id), timestamp: reading.timestamp, detectedIncidents: incidents.length });
   return { reading, incidents };
+}
+
+async function getDoorOpenSince(shipmentId, timestamp, beforeId = null) {
+  const previousFilter = {
+    shipmentId,
+    $or: [
+      { timestamp: { $lt: timestamp } },
+      ...(beforeId ? [{ timestamp, _id: { $lt: beforeId } }] : [])
+    ]
+  };
+  const previous = await TelemetryRecord.findOne(previousFilter).sort({ timestamp: -1, _id: -1 });
+  return previous?.doorStatus === "open"
+    ? previous.doorOpenSince || previous.timestamp
+    : timestamp;
 }
 
 export async function createSimulationFleet(req, res) {
   try {
     const origin = String(req.body.origin || "").trim();
     const destination = String(req.body.destination || "").trim();
+    const selectedTruckId = req.body.truckId ? String(req.body.truckId).trim() : "";
     if (!origin || !destination || origin.length > 100 || destination.length > 100) {
       return res.status(400).json({ success: false, message: "A valid origin and destination are required" });
+    }
+    if (selectedTruckId && !mongoose.isValidObjectId(selectedTruckId)) {
+      return res.status(400).json({ success: false, message: "A valid demo truck ID is required" });
     }
 
     const data = [];
@@ -57,9 +108,13 @@ export async function createSimulationFleet(req, res) {
         { $set: { simulationKey, driverName: `Simulation Driver ${suffix}`, plateNo: `SIM-DEMO-${suffix}`, capacityKg: 10000, status: "active", isSimulated: true } },
         { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
       );
+      const defaultRoute = DEFAULT_SIMULATION_ROUTES[(index - 1) % DEFAULT_SIMULATION_ROUTES.length];
       const shipment = await Shipment.findOneAndUpdate(
         { simulationKey },
-        { $set: { simulationKey, truckId: truck._id, origin, destination, status: "in_transit", isSimulated: true } },
+        {
+          $set: { truckId: truck._id, isSimulated: true },
+          $setOnInsert: { simulationKey, ...defaultRoute, status: "scheduled" }
+        },
         { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
       );
       data.push({
@@ -70,6 +125,32 @@ export async function createSimulationFleet(req, res) {
         origin: shipment.origin,
         destination: shipment.destination
       });
+    }
+
+    if (selectedTruckId) {
+      const selectedTruck = data.find(truck => truck.truckId === selectedTruckId);
+      if (!selectedTruck) return res.status(404).json({ success: false, message: "Demo truck not found in the simulation fleet" });
+      const shipment = await Shipment.findOneAndUpdate(
+        { _id: selectedTruck.shipmentId, simulationKey: { $exists: true }, isSimulated: true },
+        { $set: { origin, destination, status: "in_transit" } },
+        { new: true, runValidators: true }
+      );
+      if (!shipment) return res.status(404).json({ success: false, message: "Demo shipment not found for the selected truck" });
+      selectedTruck.origin = shipment.origin;
+      selectedTruck.destination = shipment.destination;
+    } else if (new Set(data.map(shipment => `${shipment.origin}\u0000${shipment.destination}`)).size === 1) {
+      for (let index = 0; index < data.length; index += 1) {
+        const route = DEFAULT_SIMULATION_ROUTES[index % DEFAULT_SIMULATION_ROUTES.length];
+        const shipment = await Shipment.findOneAndUpdate(
+          { _id: data[index].shipmentId, simulationKey: { $exists: true }, isSimulated: true },
+          { $set: route },
+          { new: true, runValidators: true }
+        );
+        if (shipment) {
+          data[index].origin = shipment.origin;
+          data[index].destination = shipment.destination;
+        }
+      }
     }
     return res.json({ success: true, count: data.length, data });
   } catch (error) {
@@ -176,26 +257,30 @@ export async function importTelemetry(req, res) {
   try {
     const { rows } = req.body;
     if (!Array.isArray(rows) || rows.length === 0 || rows.length > 10000) return res.status(400).json({ success: false, message: "Provide between 1 and 10,000 telemetry rows" });
-    const upload = await Upload.create({ userId: req.appUser?._id, fileName: String(req.body.fileName || "telemetry-import.csv").slice(0, 200), fileType: "csv", status: "validating", totalRows: rows.length });
-    let validRows = 0;
-    const errors = [];
-    for (let i = 0; i < rows.length; i += 1) {
+    const fileName = String(req.body.fileName || "telemetry-import.csv").slice(0, 200);
+    const fileType = fileName.split(".").pop().toLowerCase();
+    if (!["csv", "xlsx"].includes(fileType)) {
+      return res.status(400).json({ success: false, message: "Only CSV and XLSX datasets are supported" });
+    }
+    const upload = await Upload.create({ userId: req.appUser?._id, fileName, fileType, status: "validating", totalRows: rows.length });
+    const results = await runBoundedWorkers(rows, async (row, index) => {
       try {
-        const row = rows[i];
+        if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("Invalid telemetry row");
         if (!row.shipmentId || !mongoose.isValidObjectId(row.shipmentId)) throw new Error("Invalid shipmentId");
         if (row.temperature != null && !Number.isFinite(Number(row.temperature))) throw new Error("Invalid temperature");
-        await saveReading({ ...row, isSimulated: false }, upload._id, i + 1, false);
-        validRows += 1;
+        await saveReading({ ...row, isSimulated: false }, upload._id, index + 1, false);
+        return null;
       } catch (error) {
-        errors.push({ row: i + 1, message: error.message });
+        return { row: index + 1, message: error.message };
       }
-    }
+    }, 8);
+    const errors = results.filter(Boolean);
+    const validRows = rows.length - errors.length;
     upload.validRows = validRows;
     upload.rejectedRows = errors.length;
     upload.status = errors.length ? (validRows ? "partially_processed" : "failed") : "processed";
     upload.simulationStatus = "pending";
     upload.simulationProcessedRows = 0;
-    upload.simulationIncidentTypes = [];
     upload.validationMessage = errors.slice(0, 30).map(e => `Row ${e.row}: ${e.message}`).join("; ");
     await upload.save();
     res.status(201).json({ success: true, data: upload, errors: errors.slice(0, 100) });
@@ -255,12 +340,14 @@ export async function deleteTelemetryUpload(req, res) {
 }
 
 export async function simulateUploadedTelemetry(req, res) {
+  const lockId = randomUUID();
   try {
     if (!mongoose.isValidObjectId(req.params.uploadId)) {
       return res.status(400).json({ success: false, message: "Invalid upload ID" });
     }
 
-    const upload = await Upload.findById(req.params.uploadId);
+    const existingUpload = await Upload.findById(req.params.uploadId);
+    const upload = existingUpload;
     if (!upload) return res.status(404).json({ success: false, message: "Uploaded dataset not found" });
     if (String(upload.userId) !== String(req.appUser._id) && req.appUser.role !== "admin") {
       return res.status(404).json({ success: false, message: "Uploaded dataset not found" });
@@ -276,13 +363,30 @@ export async function simulateUploadedTelemetry(req, res) {
       });
     }
 
+    const now = new Date();
+    const claimedUpload = await Upload.findOneAndUpdate(
+      { _id: upload._id, $or: [{ simulationLockUntil: null }, { simulationLockUntil: { $lt: now } }] },
+      { $set: { simulationLockId: lockId, simulationLockUntil: new Date(now.getTime() + 30 * 60 * 1000) } },
+      { new: true }
+    );
+    if (!claimedUpload) return res.status(409).json({ success: false, message: "This dataset is already being replayed" });
+    claimedUpload.simulationStatus = "running";
+    await claimedUpload.save();
+
+    try {
     const batchSize = Math.min(Math.max(Number(req.body?.batchSize) || 100, 1), 250);
-    const readings = await TelemetryRecord.find({ uploadId: upload._id })
-      .sort({ sourceRowNumber: 1 })
-      .where("sourceRowNumber").gt(upload.simulationProcessedRows)
+    const readings = await TelemetryRecord.find({
+      uploadId: upload._id,
+      $or: [{ simulationProcessedAt: null }, { simulationProcessedAt: { $exists: false } }]
+    })
+      .sort({ timestamp: 1, sourceRowNumber: 1, _id: 1 })
       .limit(batchSize);
     const batch = readings;
     if (!batch.length) {
+      upload.simulationProcessedRows = await TelemetryRecord.countDocuments({
+        uploadId: upload._id,
+        simulationProcessedAt: { $ne: null }
+      });
       upload.simulationStatus = "completed";
       await upload.save();
       return res.json({
@@ -292,20 +396,15 @@ export async function simulateUploadedTelemetry(req, res) {
       });
     }
 
-    const evaluatedTypes = new Set(upload.simulationIncidentTypes);
-    let detectedIncidents = 0;
-    for (const reading of batch) {
-      const eventTypes = classifyTelemetry(reading).map(event => event.type);
-      if (eventTypes.some(type => !evaluatedTypes.has(type))) {
-        const incidents = await detectIncidentsForTelemetry(reading);
-        detectedIncidents += incidents.length;
-        for (const type of eventTypes) evaluatedTypes.add(type);
-      }
-    }
+    const detectedIncidents = await replayTelemetryBatch(batch, {
+      getDoorOpenSince: reading => getDoorOpenSince(reading.shipmentId, reading.timestamp, reading._id),
+      saveReading: reading => reading.save(),
+      detectIncidents: detectIncidentsForTelemetry
+    });
 
     await TelemetryRecord.updateMany(
       { _id: { $in: batch.map(reading => reading._id) } },
-      { $set: { isSimulated: true } }
+      { $set: { simulationProcessedAt: new Date() } }
     );
     const lastReading = batch[batch.length - 1];
     publishTelemetryEvent({
@@ -315,8 +414,10 @@ export async function simulateUploadedTelemetry(req, res) {
       detectedIncidents
     });
 
-    upload.simulationProcessedRows += batch.length;
-    upload.simulationIncidentTypes = [...evaluatedTypes];
+    upload.simulationProcessedRows = await TelemetryRecord.countDocuments({
+      uploadId: upload._id,
+      simulationProcessedAt: { $ne: null }
+    });
     upload.simulationStatus = upload.simulationProcessedRows >= upload.validRows ? "completed" : "running";
     await upload.save();
 
@@ -326,6 +427,12 @@ export async function simulateUploadedTelemetry(req, res) {
       detectedIncidents,
       simulation: { processedRows: upload.simulationProcessedRows, totalRows: upload.validRows }
     });
+    } finally {
+      await Upload.updateOne(
+        { _id: upload._id, simulationLockId: lockId },
+        { $set: { simulationLockId: "", simulationLockUntil: null } }
+      );
+    }
   } catch (error) {
     const status = error.status || (error.name === "ValidationError" || error.name === "CastError" ? 400 : 500);
     return res.status(status).json({ success: false, message: status < 500 ? error.message : "Failed to simulate uploaded telemetry" });

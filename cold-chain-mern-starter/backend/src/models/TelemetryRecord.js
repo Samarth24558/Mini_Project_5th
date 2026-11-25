@@ -4,6 +4,8 @@ const telemetryRecordSchema = new mongoose.Schema({
   uploadId: { type: mongoose.Schema.Types.ObjectId, ref: "Upload", index: true },
   shipmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment", required: true, index: true },
   timestamp: { type: Date, required: true, index: true },
+  doorOpenSince: { type: Date, default: null },
+  simulationProcessedAt: { type: Date, default: null },
   temperature: { type: Number, default: null },
   humidity: { type: Number, min: 0, max: 100, default: null },
   doorStatus: { type: String, enum: ["open", "closed", "unknown"], default: "unknown" },
@@ -21,5 +23,6 @@ const telemetryRecordSchema = new mongoose.Schema({
 
 telemetryRecordSchema.index({ shipmentId: 1, timestamp: -1 });
 telemetryRecordSchema.index({ uploadId: 1, sourceRowNumber: 1 }, { sparse: true });
+telemetryRecordSchema.index({ uploadId: 1, simulationProcessedAt: 1, timestamp: 1, sourceRowNumber: 1 });
 
 export default mongoose.model("TelemetryRecord", telemetryRecordSchema);

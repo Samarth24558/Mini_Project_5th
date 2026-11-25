@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const uploadSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
   fileName: { type: String, required: true, trim: true },
-  fileType: { type: String, enum: ["csv", "xlsx", "xls"], required: true },
+  fileType: { type: String, enum: ["csv", "xlsx"], required: true },
   uploadTime: { type: Date, default: Date.now, index: true },
   status: {
     type: String,
@@ -21,7 +21,8 @@ const uploadSchema = new mongoose.Schema({
     index: true
   },
   simulationProcessedRows: { type: Number, min: 0, default: 0 },
-  simulationIncidentTypes: { type: [String], default: [] },
+  simulationLockId: { type: String, default: "" },
+  simulationLockUntil: { type: Date, default: null },
   validationMessage: { type: String, default: "" }
 }, { timestamps: true });
 

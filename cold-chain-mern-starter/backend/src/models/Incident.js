@@ -31,5 +31,9 @@ const incidentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 incidentSchema.index({ shipmentId: 1, detectedAt: -1 });
+incidentSchema.index(
+  { "evidence.telemetryRecordId": 1, type: 1 },
+  { unique: true, partialFilterExpression: { "evidence.telemetryRecordId": { $type: "objectId" } } }
+);
 
 export default mongoose.model("Incident", incidentSchema);

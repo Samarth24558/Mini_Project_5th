@@ -6,8 +6,8 @@ MERN application for refrigerated fleet operations. It builds on the supplied pr
 
 1. **Fleet & shipment management** — truck registration, shipment creation, truck assignment, shipment status and delivery milestones.
 2. **Temperature / telemetry monitoring** — temperature, humidity, door, fuel, brake and GPS fields; per-shipment history, latest readings and authenticated server-sent live telemetry events.
-3. **Sensor and truck-travel simulation** — fleet managers can prepare 20 marked demo truck/shipment pairs from the Fleet directory before running a simulation. The simulator reuses that fleet and randomly selects one truck per run (avoiding the previous truck where possible). It displays that truck on an OpenStreetMap map with a vertical route-progress graph and posts GPS/sensor telemetry every two seconds. Each run generates temperature, door-open and brake alerts for its selected truck; the live alert list identifies the truck, route and incident type. Simulated records are marked `isSimulated: true`.
-4. **Automatic incident detection** — configurable temperature range, open-door, low-fuel and brake warning/failure detection. Every qualifying telemetry reading creates a new incident, including repeated alerts for the same shipment and incident type.
+3. **Sensor and truck-travel simulation** — fleet managers can prepare 20 marked demo truck/shipment pairs from the Fleet directory before running a simulation. Demo shipments use varied routes; each run randomly selects one truck (avoiding the previous truck where possible) and updates only that shipment to the route being simulated. It displays the selected truck on an OpenStreetMap map with a vertical route-progress graph and posts GPS/sensor telemetry every two seconds. Each run generates temperature, door-open and brake alerts for its selected truck; the live alert list identifies the truck, route and incident type. Simulated records are marked `isSimulated: true`.
+4. **Automatic incident detection** — configurable temperature range, sustained open-door, low-fuel and brake warning/failure detection. Every qualifying telemetry reading creates one incident per event type, including repeated alerts across readings for the same shipment.
 5. **Alerts** — dashboard alert records and optional Gmail notifications to the assigned team's contact email.
 6. **GPS visibility** — latitude/longitude saved with telemetry and links to open coordinates in Google Maps.
 7. **Incident response** — create, acknowledge, progress, resolve, close and assign incidents to response teams.
@@ -60,9 +60,9 @@ MERN application for refrigerated fleet operations. It builds on the supplied pr
 
 9. Open `http://localhost:5173`, sign in with Clerk, create trucks and shipments, then use **Temperature & GPS** to submit a test reading or start the demo sensor.
 
-### Upload and replay a telemetry CSV
+### Upload and replay a telemetry dataset
 
-In **Temperature & GPS**, select **Upload CSV dataset**. The CSV must include the MongoDB ID of an existing shipment in each row, unless a shipment is selected in the sensor console. Uploads are stored in MongoDB Atlas, then replayed in batches through the normal incident detection and alert workflow. Original CSV columns are retained with each telemetry reading.
+In **Temperature & GPS**, select **Upload dataset (CSV / XLSX)**. CSV and `.xlsx` workbooks are supported; workbook uploads use the first worksheet. Each row must include the MongoDB ID of an existing shipment unless a shipment is selected in the sensor console. Upload rows are validated and saved by a bounded worker pool while preserving source-row numbers. Replay is claimed by one worker at a time, processes rows in timestamp order (source row as the tie-breaker), and evaluates every row through the same incident/alert workflow. A telemetry reading can create at most one incident for each event type, so a retried replay does not duplicate its incident. Original columns are retained with each telemetry reading.
 
 Supported columns include `shipmentId`, `timestamp`, `temperature` or `Temperature_C`, `humidity` or `Humidity_Percent`, `doorStatus`, `fuelLevel` or `Fuel_Level_Percent`, `brakeStatus`, `latitude`, `longitude`, and `location`. For example:
 
@@ -71,7 +71,7 @@ shipmentId,timestamp,temperature,humidity,doorStatus,fuelLevel,brakeStatus,latit
 <existing-shipment-id>,2026-11-07T10:00:00Z,4.5,65,closed,82,normal,12.9716,77.5946,Bengaluru
 ```
 
-CSV uploads are limited to 5 MB and 10,000 rows. The upload control is available to fleet managers, administrators, and compliance officers.
+Uploads are limited to 5 MB and 10,000 rows. The upload control is available to fleet managers, administrators, and compliance officers.
 
 To seed the supplied `Cold_Chain_Logistics_Dataset (1).csv`, run `npm run seed:dataset` from `backend`; by default the script looks for the CSV one directory above the repository root. Pass a CSV path as an argument if it is stored elsewhere. The seed creates a clearly labeled demo truck and shipment, stores all original columns in Atlas, and leaves the dataset ready to replay from **Uploaded datasets & simulation**. The sole active app profile is assigned the fleet-manager role so it can operate the simulator.
 
@@ -95,11 +95,11 @@ All `/api` business routes require a valid Clerk session.
 | GET / POST | `/api/telemetry` | Read telemetry / submit a sensor packet |
 | DELETE | `/api/telemetry/:id` | Delete a reading and its generated incidents; deleting a reading from an upload deletes that dataset |
 | DELETE | `/api/telemetry/uploads/:uploadId` | Delete an uploaded dataset and its telemetry and generated incidents |
-| POST | `/api/telemetry/simulation/fleet` | Create or reuse 20 demo truck/shipment pairs |
+| POST | `/api/telemetry/simulation/fleet` | Create or reuse 20 demo pairs; assign a route only to the selected demo truck |
 | POST | `/api/telemetry/simulation/batch` | Save a simulated telemetry reading for one truck |
 | GET | `/api/telemetry/latest` | Latest reading per shipment |
 | GET | `/api/stream/telemetry` | Authenticated server-sent telemetry event stream |
-| POST | `/api/telemetry/import` | Store up to 10,000 parsed CSV telemetry rows |
+| POST | `/api/telemetry/import` | Store up to 10,000 parsed CSV/XLSX telemetry rows |
 | GET | `/api/telemetry/uploads` | List the signed-in user's uploaded datasets |
 | POST | `/api/telemetry/uploads/:uploadId/simulate` | Replay the next batch of uploaded rows and run incident detection |
 | GET / POST | `/api/incidents` | List / manually report incidents |
@@ -132,12 +132,29 @@ All `/api` business routes require a valid Clerk session.
 ## Incident rules
 
 - Temperature below `TEMP_MIN_C` or above `TEMP_MAX_C` creates a temperature-breach incident.
-- Door open creates a door incident.
+- A live door-open reading creates an incident after the door has remained open for `DOOR_OPEN_THRESHOLD_SECONDS` (300 seconds by default). Simulated dataset replay uses `SIMULATED_DOOR_OPEN_THRESHOLD_SECONDS` (8 seconds by default) so the accelerated demo can exercise the same duration rule.
 - Fuel below `LOW_FUEL_THRESHOLD` creates a low-fuel incident.
 - Brake warning/failure creates a brake incident.
 - Repeated qualifying readings are not deduplicated; each reading creates a separate incident and dashboard alert. A full demo fleet run creates 60 alerts (three alert types for each of 20 trucks). Configure notification email accordingly.
 - An active team matching the alert type is assigned automatically; if none exists, the first active team is used as a fallback.
 - Email is attempted only when Gmail credentials and a team contact email exist. Dashboard alerts remain stored when email is not configured.
+- Response status follows `new → active/acknowledged → in progress → resolved → closed`; each state change, assignment, alert, and incident record is persisted together in a MongoDB transaction.
+
+## Sprint 2 implementation and verification
+
+The project keeps the approved MERN/MongoDB data model. MongoDB references are checked by application workflows, Mongoose schema constraints validate record shapes, and multi-record incident/workflow writes use MongoDB transactions. This is an intentional architecture choice instead of the relational/SQL wording in the generic E3 handbook section; run the app against a MongoDB replica set (such as Atlas) to exercise transaction behavior.
+
+Run the focused automated tests and production build:
+
+```powershell
+cd backend
+npm test
+cd ..\frontend
+npm test
+npm run build
+```
+
+The tests cover bounded ingestion workers, CSV/XLSX parsing, timestamp-ordered replay evaluation, threshold and door-duration boundaries, specialist routing, Mongo transaction lifecycle handling, schema validation, incident transitions, role-based simulation access, and report CSV escaping. Live Atlas transaction behavior, Clerk role configuration, Gmail delivery, and deployment evidence still require environment-specific verification.
 
 The automatic detection rules are a starting configuration. Validate threshold values and response policies for the cargo, sensor calibration, operating region, and applicable regulations before production use.
 

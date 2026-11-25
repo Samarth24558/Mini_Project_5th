@@ -4,7 +4,26 @@ import AlertEvent from "../models/AlertEvent.js";
 import AuditLog from "../models/AuditLog.js";
 import Team from "../models/Team.js";
 import TeamAssignment from "../models/TeamAssignment.js";
-import { deleteIncidentBranch, withDeletionTransaction } from "../services/recordDeletion.js";
+import { deleteIncidentBranch, withDeletionTransaction, withMongoTransaction } from "../services/recordDeletion.js";
+import { createManualIncidentWorkflow } from "../services/incidentDetection.js";
+
+const INCIDENT_STATUS_TRANSITIONS = {
+  new: ["active", "acknowledged"],
+  active: ["acknowledged", "in_progress"],
+  acknowledged: ["in_progress"],
+  in_progress: ["resolved"],
+  resolved: ["closed"],
+  closed: []
+};
+
+export function canTransitionIncidentStatus(currentStatus, nextStatus) {
+  return currentStatus === nextStatus
+    || INCIDENT_STATUS_TRANSITIONS[currentStatus]?.includes(nextStatus) === true;
+}
+
+function incidentErrorStatus(error) {
+  return error.name === "ValidationError" || error.name === "CastError" ? 400 : 500;
+}
 
 export async function listIncidents(req, res) {
   try {
@@ -25,11 +44,21 @@ export async function createManualIncident(req, res) {
   try {
     const { shipmentId, type = "other", severity = "medium", description = "Manually reported incident" } = req.body;
     if (!mongoose.isValidObjectId(shipmentId)) return res.status(400).json({ success: false, message: "Valid shipmentId is required" });
-    const incident = await Incident.create({ shipmentId, type, severity, description, status: "new" });
-    const alert = await AlertEvent.create({ incidentId: incident._id, alertType: type, message: description, channel: "dashboard", status: "sent", sentAt: new Date() });
-    await AuditLog.create({ incidentId: incident._id, alertEventId: alert._id, action: "incident_created", actionBy: req.appUser?._id, remarks: "Manually created from dashboard" });
+    const incident = await createManualIncidentWorkflow({
+      shipmentId,
+      type,
+      severity,
+      description,
+      actionBy: req.appUser?._id
+    });
+    if (!incident) return res.status(404).json({ success: false, message: "Shipment not found" });
+    await incident.populate("shipmentId assignedTeamId");
     res.status(201).json({ success: true, data: incident });
-  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  } catch (error) {
+    const status = incidentErrorStatus(error);
+    if (status === 500) console.error("createManualIncident:", error);
+    res.status(status).json({ success: false, message: status === 400 ? error.message : "Failed to create incident" });
+  }
 }
 
 export async function updateIncident(req, res) {
@@ -38,12 +67,41 @@ export async function updateIncident(req, res) {
     if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: "Invalid incident ID" });
     const allowed = ["status", "severity", "description", "resolutionNote"];
     const updates = Object.fromEntries(allowed.filter(key => Object.hasOwn(req.body, key)).map(key => [key, req.body[key]]));
-    if (updates.status === "resolved" || updates.status === "closed") updates.resolvedAt = new Date();
-    const incident = await Incident.findByIdAndUpdate(id, updates, { new: true, runValidators: true }).populate("shipmentId").populate("assignedTeamId");
+    if (!Object.keys(updates).length) return res.status(400).json({ success: false, message: "Provide at least one incident field to update" });
+    const incident = await withMongoTransaction(async session => {
+      const current = await Incident.findById(id).session(session);
+      if (!current) return null;
+      if (updates.status && !canTransitionIncidentStatus(current.status, updates.status)) {
+        return { invalidTransition: true, currentStatus: current.status, nextStatus: updates.status };
+      }
+      Object.assign(current, updates);
+      if ((updates.status === "resolved" || updates.status === "closed") && !current.resolvedAt) {
+        current.resolvedAt = new Date();
+      }
+      await current.save({ session });
+      await AuditLog.create([{
+        incidentId: current._id,
+        action: `incident_${updates.status || "updated"}`,
+        actionBy: req.appUser?._id,
+        remarks: updates.resolutionNote || updates.description || "Incident updated",
+        metadata: updates
+      }], { session });
+      return current;
+    });
     if (!incident) return res.status(404).json({ success: false, message: "Incident not found" });
-    await AuditLog.create({ incidentId: incident._id, action: `incident_${updates.status || "updated"}`, actionBy: req.appUser?._id, remarks: updates.resolutionNote || updates.description || "Incident updated", metadata: updates });
+    if (incident.invalidTransition) {
+      return res.status(409).json({
+        success: false,
+        message: `Incident cannot transition from ${incident.currentStatus} to ${incident.nextStatus}`
+      });
+    }
+    await incident.populate("shipmentId assignedTeamId");
     res.json({ success: true, data: incident });
-  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  } catch (error) {
+    const status = incidentErrorStatus(error);
+    if (status === 500) console.error("updateIncident:", error);
+    res.status(status).json({ success: false, message: status === 400 ? error.message : "Failed to update incident" });
+  }
 }
 
 export async function assignIncident(req, res) {
@@ -51,15 +109,47 @@ export async function assignIncident(req, res) {
     const { id } = req.params;
     const { teamId, note = "" } = req.body;
     if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(teamId)) return res.status(400).json({ success: false, message: "Valid incident and team IDs are required" });
-    const [incident, team] = await Promise.all([Incident.findById(id), Team.findById(teamId)]);
-    if (!incident || !team) return res.status(404).json({ success: false, message: "Incident or team not found" });
-    incident.assignedTeamId = team._id;
-    if (incident.status === "new") incident.status = "active";
-    await incident.save();
-    await TeamAssignment.create({ incidentId: incident._id, teamId: team._id, assignedBy: req.appUser?._id, role: "primary", status: "assigned", note });
-    await AuditLog.create({ incidentId: incident._id, action: "team_assigned", actionBy: req.appUser?._id, remarks: note, metadata: { teamId: String(team._id) } });
-    res.json({ success: true, data: incident });
-  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+    const result = await withMongoTransaction(async session => {
+      const [incident, team] = await Promise.all([
+        Incident.findById(id).session(session),
+        Team.findById(teamId).session(session)
+      ]);
+      if (!incident || !team) return { notFound: true };
+      if (team.status !== "active") return { inactiveTeam: true };
+      await TeamAssignment.updateMany(
+        { incidentId: incident._id, status: { $in: ["assigned", "accepted"] } },
+        { $set: { status: "reassigned" } },
+        { session }
+      );
+      incident.assignedTeamId = team._id;
+      if (incident.status === "new") incident.status = "active";
+      await incident.save({ session });
+      await TeamAssignment.create([{
+        incidentId: incident._id,
+        teamId: team._id,
+        assignedBy: req.appUser?._id,
+        role: "primary",
+        status: "assigned",
+        note
+      }], { session });
+      await AuditLog.create([{
+        incidentId: incident._id,
+        action: "team_assigned",
+        actionBy: req.appUser?._id,
+        remarks: note,
+        metadata: { teamId: String(team._id) }
+      }], { session });
+      return incident;
+    });
+    if (result?.notFound) return res.status(404).json({ success: false, message: "Incident or team not found" });
+    if (result?.inactiveTeam) return res.status(409).json({ success: false, message: "Cannot assign an incident to an inactive team" });
+    await result.populate("shipmentId assignedTeamId");
+    res.json({ success: true, data: result });
+  } catch (error) {
+    const status = incidentErrorStatus(error);
+    if (status === 500) console.error("assignIncident:", error);
+    res.status(status).json({ success: false, message: status === 400 ? error.message : "Failed to assign incident" });
+  }
 }
 
 export async function deleteIncident(req, res) {

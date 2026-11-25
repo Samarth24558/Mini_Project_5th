@@ -66,3 +66,10 @@ td,input,select,textarea{font-size:13px}
 .delete-action{padding:7px 10px;white-space:nowrap}
 .action-cell{min-width:180px}
 .team-card .delete-action{margin-top:8px}
+.table-wrap:not(.shipment-register-scroll):not(.incident-register-scroll):not(.telemetry-history-scroll){max-height:420px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--muted) var(--surface-2)}
+.table-wrap::-webkit-scrollbar,.team-grid::-webkit-scrollbar,.latest-list::-webkit-scrollbar{width:7px;height:7px}
+.table-wrap::-webkit-scrollbar-track,.team-grid::-webkit-scrollbar-track,.latest-list::-webkit-scrollbar-track{background:var(--surface-2);border-radius:5px}
+.table-wrap::-webkit-scrollbar-thumb,.team-grid::-webkit-scrollbar-thumb,.latest-list::-webkit-scrollbar-thumb{background:var(--muted);border-radius:5px}
+.table-wrap::-webkit-scrollbar-thumb:hover,.team-grid::-webkit-scrollbar-thumb:hover,.latest-list::-webkit-scrollbar-thumb:hover{background:var(--green)}
+.table-wrap th{position:sticky;top:0;z-index:1;background:var(--surface)}
+.team-grid{max-height:420px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--muted) var(--surface-2);padding-right:4px}
