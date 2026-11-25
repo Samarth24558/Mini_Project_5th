@@ -16,7 +16,8 @@ import { replayTelemetryBatch } from "../../dsa/telemetryReplay.js";
 import { getDefaultSimulationRoute } from "../../dsa/simulationRoutes.js";
 
 const SIMULATION_FLEET_SIZE = 20;
-const SIMULATION_BATCH_SIZE = 1;
+const SIMULATION_TRUCKS_PER_RUN = 5;
+const SIMULATION_BATCH_SIZE = SIMULATION_TRUCKS_PER_RUN;
 
 function validOptionalNumber(value, min, max) {
   if (value === undefined || value === null || value === "") return true;
@@ -87,12 +88,25 @@ export async function createSimulationFleet(req, res) {
   try {
     const origin = String(req.body.origin || "").trim();
     const destination = String(req.body.destination || "").trim();
-    const selectedTruckId = req.body.truckId ? String(req.body.truckId).trim() : "";
-    if (!origin || !destination || origin.length > 100 || destination.length > 100) {
+    let selectedTruckIds = [];
+    if (req.body.truckIds !== undefined) {
+      if (!Array.isArray(req.body.truckIds) || req.body.truckIds.length === 0) {
+        return res.status(400).json({ success: false, message: "Provide a non-empty list of demo truck IDs" });
+      }
+      selectedTruckIds = req.body.truckIds.map(id => String(id).trim());
+    } else if (req.body.truckId) {
+      selectedTruckIds = [String(req.body.truckId).trim()];
+    }
+    if ((!selectedTruckIds.length && (!origin || !destination))
+      || Boolean(origin) !== Boolean(destination)
+      || origin.length > 100
+      || destination.length > 100) {
       return res.status(400).json({ success: false, message: "A valid origin and destination are required" });
     }
-    if (selectedTruckId && !mongoose.isValidObjectId(selectedTruckId)) {
-      return res.status(400).json({ success: false, message: "A valid demo truck ID is required" });
+    if (selectedTruckIds.length > SIMULATION_TRUCKS_PER_RUN
+      || new Set(selectedTruckIds).size !== selectedTruckIds.length
+      || selectedTruckIds.some(id => !mongoose.isValidObjectId(id))) {
+      return res.status(400).json({ success: false, message: "Provide up to five unique valid demo truck IDs" });
     }
 
     const data = [];
@@ -123,17 +137,26 @@ export async function createSimulationFleet(req, res) {
       });
     }
 
-    if (selectedTruckId) {
-      const selectedTruck = data.find(truck => truck.truckId === selectedTruckId);
-      if (!selectedTruck) return res.status(404).json({ success: false, message: "Demo truck not found in the simulation fleet" });
-      const shipment = await Shipment.findOneAndUpdate(
-        { _id: selectedTruck.shipmentId, simulationKey: { $exists: true }, isSimulated: true },
-        { $set: { origin, destination, status: "in_transit" } },
-        { new: true, runValidators: true }
-      );
-      if (!shipment) return res.status(404).json({ success: false, message: "Demo shipment not found for the selected truck" });
-      selectedTruck.origin = shipment.origin;
-      selectedTruck.destination = shipment.destination;
+    if (selectedTruckIds.length) {
+      const selectedTrucks = selectedTruckIds.map(truckId => data.find(truck => truck.truckId === truckId));
+      if (selectedTrucks.some(truck => !truck)) {
+        return res.status(404).json({ success: false, message: "A selected truck was not found in the simulation fleet" });
+      }
+      for (const selectedTruck of selectedTrucks) {
+        const shipmentUpdates = { status: "in_transit" };
+        if (origin && destination) {
+          shipmentUpdates.origin = origin;
+          shipmentUpdates.destination = destination;
+        }
+        const shipment = await Shipment.findOneAndUpdate(
+          { _id: selectedTruck.shipmentId, simulationKey: { $exists: true }, isSimulated: true },
+          { $set: shipmentUpdates },
+          { new: true, runValidators: true }
+        );
+        if (!shipment) return res.status(404).json({ success: false, message: "Demo shipment not found for a selected truck" });
+        selectedTruck.origin = shipment.origin;
+        selectedTruck.destination = shipment.destination;
+      }
     } else {
       for (let index = 0; index < data.length; index += 1) {
         const route = getDefaultSimulationRoute(index);
@@ -160,11 +183,11 @@ export async function createSimulationTelemetryBatch(req, res) {
   try {
     const { readings } = req.body;
     if (!Array.isArray(readings) || readings.length !== SIMULATION_BATCH_SIZE) {
-      return res.status(400).json({ success: false, message: "Provide exactly one simulated truck reading" });
+      return res.status(400).json({ success: false, message: "Provide exactly five simulated truck readings" });
     }
     const shipmentIds = readings.map(reading => reading?.shipmentId);
     if (shipmentIds.some(id => !mongoose.isValidObjectId(id)) || new Set(shipmentIds.map(String)).size !== SIMULATION_BATCH_SIZE) {
-      return res.status(400).json({ success: false, message: "Provide one unique valid demo shipmentId" });
+      return res.status(400).json({ success: false, message: "Provide five unique valid demo shipmentIds" });
     }
     for (const reading of readings) {
       if (reading.temperature != null && !Number.isFinite(Number(reading.temperature))) return res.status(400).json({ success: false, message: "Temperature must be numeric" });
@@ -175,7 +198,7 @@ export async function createSimulationTelemetryBatch(req, res) {
 
     const shipments = await Shipment.find({ _id: { $in: shipmentIds }, isSimulated: true }).populate("truckId", "plateNo driverName");
     if (shipments.length !== SIMULATION_BATCH_SIZE) {
-      return res.status(400).json({ success: false, message: "The simulation reading must use one registered demo shipment" });
+      return res.status(400).json({ success: false, message: "The readings must use five registered demo shipments" });
     }
     const shipmentById = new Map(shipments.map(shipment => [String(shipment._id), shipment]));
     const saved = await Promise.all(readings.map(reading => saveReading({ ...reading, isSimulated: true }, null, null, true, false)));

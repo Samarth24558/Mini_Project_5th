@@ -7,8 +7,8 @@ test("demo fleet routes rotate across all configured routes", () => {
   const uniqueRoutes = new Set(firstFleet.map(route => `${route.origin}\u0000${route.destination}`));
 
   assert.equal(uniqueRoutes.size, DEFAULT_SIMULATION_ROUTES.length);
-  assert.deepEqual(firstFleet.slice(0, 4), DEFAULT_SIMULATION_ROUTES);
-  assert.deepEqual(firstFleet.slice(4, 8), DEFAULT_SIMULATION_ROUTES);
+  assert.deepEqual(firstFleet.slice(0, 5), DEFAULT_SIMULATION_ROUTES);
+  assert.deepEqual(firstFleet.slice(5, 10), DEFAULT_SIMULATION_ROUTES);
 });
 
 test("default route selection rejects invalid indexes", () => {

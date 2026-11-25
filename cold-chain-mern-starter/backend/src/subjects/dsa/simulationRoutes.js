@@ -2,7 +2,8 @@ export const DEFAULT_SIMULATION_ROUTES = [
   { origin: "Bengaluru", destination: "Mysuru" },
   { origin: "Chennai", destination: "Bengaluru" },
   { origin: "Hyderabad", destination: "Vijayawada" },
-  { origin: "Mumbai", destination: "Pune" }
+  { origin: "Mumbai", destination: "Pune" },
+  { origin: "Bengaluru", destination: "Hyderabad" }
 ];
 
 export function getDefaultSimulationRoute(index) {

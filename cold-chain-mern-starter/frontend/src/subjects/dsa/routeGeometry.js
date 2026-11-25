@@ -1,14 +1,23 @@
 export const DEMO_ROUTES = [
-  { id: "blr-mys", name: "Bengaluru → Mysuru", points: [[12.9716, 77.5946], [12.72, 77.45], [12.48, 77.14], [12.2958, 76.6394]] },
-  { id: "chn-blr", name: "Chennai → Bengaluru", points: [[13.0827, 80.2707], [12.75, 79.72], [12.42, 79.12], [12.68, 78.35], [12.9716, 77.5946]] },
-  { id: "hyd-vij", name: "Hyderabad → Vijayawada", points: [[17.385, 78.4867], [17.12, 79.38], [16.82, 80.08], [16.5062, 80.648]] },
-  { id: "mum-pun", name: "Mumbai → Pune", points: [[19.076, 72.8777], [18.96, 73.18], [18.79, 73.48], [18.5204, 73.8567]] }
+  { id: "blr-mys", name: "Bengaluru → Mysuru", color: "#087e70", points: [[12.9716, 77.5946], [12.72, 77.45], [12.48, 77.14], [12.2958, 76.6394]] },
+  { id: "chn-blr", name: "Chennai → Bengaluru", color: "#2878d1", points: [[13.0827, 80.2707], [12.75, 79.72], [12.42, 79.12], [12.68, 78.35], [12.9716, 77.5946]] },
+  { id: "hyd-vij", name: "Hyderabad → Vijayawada", color: "#c48428", points: [[17.385, 78.4867], [17.12, 79.38], [16.82, 80.08], [16.5062, 80.648]] },
+  { id: "mum-pun", name: "Mumbai → Pune", color: "#9d5a92", points: [[19.076, 72.8777], [18.96, 73.18], [18.79, 73.48], [18.5204, 73.8567]] },
+  { id: "blr-hyd", name: "Bengaluru → Hyderabad", color: "#287c91", points: [[12.9716, 77.5946], [14.6819, 77.6006], [15.8281, 78.0373], [16.7375, 77.9842], [17.385, 78.4867]] }
 ];
 
 export function findDemoRoute(origin, destination) {
   return DEMO_ROUTES.find(route =>
     route.name === `${String(origin).trim()} → ${String(destination).trim()}`
   ) ?? null;
+}
+
+export function selectTrucksWithDistinctRoutes(fleet, random = Math.random) {
+  return DEMO_ROUTES.map(route => {
+    const trucksOnRoute = fleet.filter(truck => findDemoRoute(truck.origin, truck.destination)?.id === route.id);
+    if (!trucksOnRoute.length) throw new Error(`No demo truck is assigned to ${route.name}`);
+    return trucksOnRoute[Math.floor(random() * trucksOnRoute.length)];
+  });
 }
 
 export function getRoutePosition(points, progress) {
