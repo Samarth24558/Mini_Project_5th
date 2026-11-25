@@ -5,6 +5,7 @@ import AlertEvent from "../dbms/models/AlertEvent.js";
 import AuditLog from "../dbms/models/AuditLog.js";
 import Shipment from "../dbms/models/Shipment.js";
 import { sendIncidentEmail } from "../webTechnology/services/emailService.js";
+import { getAlertRecipients } from "../webTechnology/services/alertRecipients.js";
 import { withMongoTransaction } from "../dbms/recordDeletion.js";
 
 const minTemp = Number(process.env.TEMP_MIN_C ?? 2);
@@ -36,6 +37,9 @@ export function classifyTelemetry(reading, options = {}) {
   if (reading.brakeStatus === "failure" || reading.brakeStatus === "warning") {
     events.push({ type: "brake_problem", severity: reading.brakeStatus === "failure" ? "critical" : "high", description: `Brake status reported as ${reading.brakeStatus}.` });
   }
+  if (reading.isSimulated === true && reading.accidentDetected === true) {
+    events.push({ type: "accident", severity: "critical", description: "A vehicle accident was detected during the simulation." });
+  }
   return events;
 }
 
@@ -56,8 +60,11 @@ async function persistEvent({ event, shipment, reading, actionBy, auditAction, s
   }
 
   const teamType = teamTypeForIncident(event.type);
-  let team = await Team.findOne({ teamType, status: "active" }).sort({ createdAt: 1 }).session(session);
-  if (!team) team = await Team.findOne({ status: "active" }).sort({ createdAt: 1 }).session(session);
+  const team = await Team.findOne({
+    teamType,
+    status: "active",
+    "contactInfo.email": { $type: "string", $ne: "" }
+  }).sort({ createdAt: 1 }).session(session);
 
   const [incident] = await Incident.create([{
     shipmentId: shipment._id,
@@ -86,7 +93,9 @@ async function persistEvent({ event, shipment, reading, actionBy, auditAction, s
     }], { session });
   }
 
-  const recipients = team?.contactInfo?.email ? [team.contactInfo.email] : [];
+  const recipients = getAlertRecipients({
+    assignedTeamEmail: team?.contactInfo?.email
+  });
   const truckLabel = shipment.truckId?.plateNo ? `Truck ${shipment.truckId.plateNo}: ` : "";
   const [alert] = await AlertEvent.create([{
     incidentId: incident._id,

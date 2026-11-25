@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getRoutePosition } from "../src/subjects/dsa/routeGeometry.js";
+import { DEMO_ROUTES, findDemoRoute, getRoutePosition } from "../src/subjects/dsa/routeGeometry.js";
 
 test("route interpolation returns endpoints and clamps progress", () => {
   const points = [[0, 0], [0, 2]];
@@ -15,4 +15,10 @@ test("route interpolation advances by distance across route segments", () => {
   const position = getRoutePosition(points, 0.5);
   assert.ok(Math.abs(position[0]) < 1e-9);
   assert.ok(Math.abs(position[1] - 1.5) < 1e-6);
+});
+
+test("the simulated route is selected from the backend shipment endpoints", () => {
+  assert.equal(findDemoRoute("Chennai", "Bengaluru")?.id, "chn-blr");
+  assert.equal(findDemoRoute(" Unknown ", "Route "), null);
+  assert.equal(DEMO_ROUTES.length, 4);
 });

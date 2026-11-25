@@ -11,6 +11,7 @@ const telemetryRecordSchema = new mongoose.Schema({
   doorStatus: { type: String, enum: ["open", "closed", "unknown"], default: "unknown" },
   fuelLevel: { type: Number, min: 0, max: 100, default: null },
   brakeStatus: { type: String, enum: ["normal", "warning", "failure", "unknown"], default: "unknown" },
+  accidentDetected: { type: Boolean, default: false },
   location: {
     latitude: { type: Number, min: -90, max: 90, default: null },
     longitude: { type: Number, min: -180, max: 180, default: null },

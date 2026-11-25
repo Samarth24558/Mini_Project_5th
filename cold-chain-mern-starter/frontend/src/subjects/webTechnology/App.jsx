@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { divIcon } from "leaflet";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { getRoutePosition } from "../dsa/routeGeometry.js";
+import { DEMO_ROUTES, findDemoRoute, getRoutePosition } from "../dsa/routeGeometry.js";
+import { getSimulationAlertType } from "../dsa/simulationAlertSchedule.js";
 import { parseTelemetryFile } from "../dsa/telemetryImport.js";
 
 const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -23,12 +24,7 @@ const INCIDENT_STATUS_OPTIONS = {
   closed: ["closed"]
 };
 const ASSIGNABLE_ROLES = ["fleet_manager", "driver", "action_team_member", "compliance_officer"];
-const DEMO_ROUTES = [
-  { id: "blr-mys", name: "Bengaluru → Mysuru", points: [[12.9716, 77.5946], [12.72, 77.45], [12.48, 77.14], [12.2958, 76.6394]] },
-  { id: "chn-blr", name: "Chennai → Bengaluru", points: [[13.0827, 80.2707], [12.75, 79.72], [12.42, 79.12], [12.68, 78.35], [12.9716, 77.5946]] },
-  { id: "hyd-vij", name: "Hyderabad → Vijayawada", points: [[17.385, 78.4867], [17.12, 79.38], [16.82, 80.08], [16.5062, 80.648]] },
-  { id: "mum-pun", name: "Mumbai → Pune", points: [[19.076, 72.8777], [18.96, 73.18], [18.79, 73.48], [18.5204, 73.8567]] }
-];
+const REQUIRED_SIMULATION_TEAM_TYPES = ["cold_chain", "fuel_support", "maintenance", "emergency_response"];
 const SIMULATION_TICKS = 30;
 const SIMULATION_INTERVAL_MS = 2000;
 const truckMarkerIcon = divIcon({
@@ -317,10 +313,14 @@ function Workspace() {
   }, [request, selectedShipment, tempForm]);
   const startSimulation = async () => {
     if (!canRunSimulation) return flash("Ask a fleet manager to grant simulator access", "error");
-    if (!hasActiveResponseTeam) return flash("Create an active response team before running an alert simulation", "error");
+    if (!hasRequiredSimulationTeams) return flash("Activate all four response teams and configure each team's email before running the simulation", "error");
     setSimulationStarting(true);
     try {
-      const otherRoutes = DEMO_ROUTES.filter(route => route.id !== simulationRoute.id);
+      const lowFuelThreshold = Number(dashboard?.thresholds?.lowFuel ?? 15);
+      if (!Number.isFinite(lowFuelThreshold) || lowFuelThreshold <= 0 || lowFuelThreshold > 100) {
+        throw new Error("Set LOW_FUEL_THRESHOLD to a value above 0 and no greater than 100 to generate all four simulation alerts");
+      }
+      const otherRoutes = DEMO_ROUTES.filter(route => route.id !== simulationRoute?.id);
       const route = otherRoutes[Math.floor(Math.random() * otherRoutes.length)];
       const [origin, destination] = route.name.split(" → ");
       const fleetResult = await request("/api/telemetry/simulation/fleet", {
@@ -342,53 +342,69 @@ function Workspace() {
       });
       const truck = assignedFleetResult.data?.find(item => item.truckId === selectedTruck.truckId);
       if (!truck) throw new Error("Could not assign the selected route to its demo truck");
+      const actualRoute = findDemoRoute(truck.origin, truck.destination);
+      if (!actualRoute) throw new Error(`The selected truck has an unsupported route: ${truck.origin} → ${truck.destination}`);
       setShipments(current => current.map(shipment => shipment._id === truck.shipmentId
         ? { ...shipment, origin: truck.origin, destination: truck.destination, status: "in_transit" }
         : shipment));
 
       if (simTimer.current) clearTimeout(simTimer.current);
-      setSimulationRoute(route);
+      setSimulationRoute(actualRoute);
       setSimulationAlerts([]);
-      setSimulationTruck({ ...truck, position: route.points[0], progress: 0 });
+      setSimulationTruck({ ...truck, position: actualRoute.points[0], progress: 0 });
       simulationStep.current = 0;
       setTravelProgress(0);
       setIsSimulating(true);
 
-      const pushBatch = async () => {
+      let pendingReadings = Promise.resolve();
+      const pushBatch = () => {
         if (simTimer.current === null) return;
         const tickStartedAt = performance.now();
         try {
           simulationStep.current += 1;
           const tick = simulationStep.current;
           const progress = tick / SIMULATION_TICKS;
-          const position = getRoutePosition(route.points, progress);
+          const position = getRoutePosition(actualRoute.points, progress);
           const simulatedTruck = { ...truck, position, progress };
-          const alertType = tick === 5 ? "temperature_breach" : tick === 15 ? "brake_problem" : null;
+          const alertType = getSimulationAlertType(tick);
           const [latitude, longitude] = position;
+          const normalFuelLevel = Math.min(100, Math.max(75, lowFuelThreshold));
           const readings = [{
             shipmentId: truck.shipmentId,
-            temperature: alertType === "temperature_breach" ? maxTemp + 4 : Number((3 + Math.random() * 4).toFixed(1)),
+            temperature: alertType === "temperature_breach" ? maxTemp + 4 : minTemp + (maxTemp - minTemp) / 2,
             humidity: Math.round(55 + Math.random() * 25),
-            doorStatus: tick >= 10 && tick <= 15 ? "open" : "closed",
-            fuelLevel: 75,
+            doorStatus: "closed",
+            fuelLevel: alertType === "low_fuel" ? Math.max(0, lowFuelThreshold - 1) : normalFuelLevel,
             brakeStatus: alertType === "brake_problem" ? "warning" : "normal",
-            location: { latitude, longitude, label: `Simulated demo route: ${route.name}` }
+            accidentDetected: alertType === "accident",
+            location: { latitude, longitude, label: `Simulated demo route: ${actualRoute.name}` }
           }];
           setTravelProgress(progress);
           setSimulationTruck(simulatedTruck);
-          const result = await request("/api/telemetry/simulation/batch", {
-            method: "POST",
-            body: JSON.stringify({ readings })
-          });
-          const alertsCreated = result.data.alerts || [];
-          if (alertsCreated.length) {
-            setSimulationAlerts(current => [...alertsCreated, ...current]);
-            const alertTypes = [...new Set(alertsCreated.map(alert => alert.type.replaceAll("_", " ")))].join(", ");
-            flash(`${alertsCreated.length} ${alertTypes} alerts created for ${truck.plateNo}`, "error");
-          }
-          if (tick >= SIMULATION_TICKS) {
+          pendingReadings = pendingReadings.then(async () => {
+            if (simTimer.current === null) return;
+            const result = await request("/api/telemetry/simulation/batch", {
+              method: "POST",
+              body: JSON.stringify({ readings })
+            });
+            const alertsCreated = result.data.alerts || [];
+            if (alertsCreated.length) {
+              setSimulationAlerts(current => [...alertsCreated, ...current]);
+              const alertTypes = [...new Set(alertsCreated.map(alert => alert.type.replaceAll("_", " ")))].join(", ");
+              flash(`${alertsCreated.length} ${alertTypes} alerts created for ${truck.plateNo}`, "error");
+            }
+          }).catch(error => {
+            flash(error.message, "error");
             stopSimulation();
-            flash(`${truck.plateNo} completed the ${route.name} simulation`);
+          });
+
+          if (tick >= SIMULATION_TICKS) {
+            pendingReadings.then(() => {
+              if (simTimer.current !== null) {
+                stopSimulation();
+                flash(`${truck.plateNo} completed the ${actualRoute.name} simulation`);
+              }
+            });
           } else if (simTimer.current !== null) {
             const delay = Math.max(0, tickStartedAt + SIMULATION_INTERVAL_MS - performance.now());
             simTimer.current = setTimeout(pushBatch, delay);
@@ -400,7 +416,7 @@ function Workspace() {
       };
 
       simTimer.current = setTimeout(pushBatch, 0);
-      flash(`${truck.plateNo} traveling ${route.name} · 3 alerts planned`);
+      flash(`${truck.plateNo} traveling ${actualRoute.name} · 4 alerts planned`);
     } catch (error) {
       flash(error.message, "error");
     } finally {
@@ -487,11 +503,13 @@ function Workspace() {
   const canDeleteTelemetry = canManage || profile?.role === "compliance_officer";
   const canRunSimulation = canManage || profile?.canRunSimulation === true;
   const demoTruckCount = trucks.filter(truck => truck.isSimulated && truck.simulationKey?.startsWith("demo-fleet-")).length;
-  const hasActiveResponseTeam = teams.some(team => team.status === "active");
+  const hasRequiredSimulationTeams = REQUIRED_SIMULATION_TEAM_TYPES.every(teamType =>
+    teams.some(team => team.teamType === teamType && team.status === "active" && team.contactInfo?.email?.trim())
+  );
   const minTemp = dashboard?.thresholds?.minTemp ?? 2;
   const maxTemp = dashboard?.thresholds?.maxTemp ?? 8;
   const currentShipment = shipments.find(x => x._id === selectedShipment);
-  const routePosition = simulationTruck?.position || simulationRoute.points[0];
+  const routePosition = simulationTruck?.position || simulationRoute?.points[0] || [0, 0];
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -565,10 +583,10 @@ function Workspace() {
               <label>Brake status<select value={tempForm.brakeStatus} onChange={e => setTempForm({ ...tempForm, brakeStatus: e.target.value })}><option value="normal">Normal</option><option value="warning">Warning</option><option value="failure">Failure</option><option value="unknown">Unknown</option></select></label>
               <div className="form-row"><label>GPS latitude<input type="number" step="any" value={tempForm.latitude} onChange={e => setTempForm({ ...tempForm, latitude: e.target.value })} placeholder="Optional"/></label><label>GPS longitude<input type="number" step="any" value={tempForm.longitude} onChange={e => setTempForm({ ...tempForm, longitude: e.target.value })} placeholder="Optional"/></label></div>
               <button className="button button-primary" disabled={busy || !selectedShipment} onClick={() => run(async () => { await sendReading(); flash("Sensor reading saved and evaluated for incidents"); })}>＋ Submit reading</button>
-              <div className="simulator-box"><div><strong>Truck travel simulation</strong><small>20 demo trucks available · one random truck per run · 3 alerts for that truck</small></div>{isSimulating ? <button className="button button-danger" onClick={stopSimulation}>Stop simulation</button> : <button className="button button-dark" disabled={!canRunSimulation || simulationStarting || !hasActiveResponseTeam} onClick={startSimulation}>{simulationStarting ? "Selecting a truck…" : "▶ Start simulation"}</button>}</div>
-              {!hasActiveResponseTeam && <p className="helper-line">Create an active response team before running an alert simulation.</p>}
+              <div className="simulator-box"><div><strong>Truck travel simulation</strong><small>20 demo trucks available · one random truck per run · 4 alerts for that truck (one per response team)</small></div>{isSimulating ? <button className="button button-danger" onClick={stopSimulation}>Stop simulation</button> : <button className="button button-dark" disabled={!canRunSimulation || simulationStarting || !hasRequiredSimulationTeams} onClick={startSimulation}>{simulationStarting ? "Selecting a truck…" : "▶ Start simulation"}</button>}</div>
+              {!hasRequiredSimulationTeams && <p className="helper-line">Activate all four response teams and configure each team's email before running the simulation.</p>}
               {!canRunSimulation && <p className="helper-line">Ask your fleet manager to grant you simulator access.</p>}
-              {isSimulating && <p className="helper-line"><i className="pulse-dot"/> {simulationTruck?.plateNo} is traveling; three alerts will be generated for this truck.</p>}
+              {isSimulating && <p className="helper-line"><i className="pulse-dot"/> {simulationTruck?.plateNo} is traveling; four alerts will be generated, one for each response team.</p>}
             </div>
           </section>
           <section className="panel">
@@ -589,16 +607,16 @@ function Workspace() {
           </div>}
           <div className="route-display">
             <RouteMap route={simulationRoute} truck={simulationTruck} animationDuration={SIMULATION_INTERVAL_MS}/>
-            <div className="route-rail" aria-label={`Truck route progress: ${Math.round(travelProgress * 100)} percent`}>
-              <span className="route-rail-label">{simulationRoute.name.split(" → ")[0]}</span>
-              <div className="route-rail-track">
-                <div className="route-rail-fill" style={{ height: `${travelProgress * 100}%` }}/>
-                <span className="route-rail-stop route-rail-start"/>
-                <span className="route-rail-truck" style={{ top: `${travelProgress * 100}%` }} title="Selected truck progress">●</span>
-                <span className="route-rail-stop route-rail-end"/>
+              <div className="route-rail" aria-label={`Truck route progress: ${Math.round(travelProgress * 100)} percent`}>
+                <span className="route-rail-label">{simulationRoute.name.split(" → ")[0]}</span>
+                <div className="route-rail-track">
+                  <div className="route-rail-fill" style={{ height: `${travelProgress * 100}%` }}/>
+                  <span className="route-rail-stop route-rail-start"/>
+                  <span className="route-rail-truck" style={{ top: `${travelProgress * 100}%` }} title="Selected truck progress">●</span>
+                  <span className="route-rail-stop route-rail-end"/>
+                </div>
+                <span className="route-rail-label">{simulationRoute.name.split(" → ")[1]}</span>
               </div>
-              <span className="route-rail-label">{simulationRoute.name.split(" → ")[1]}</span>
-            </div>
           </div>
           <div className="route-progress"><p className="helper-line">{simulationTruck?.plateNo || "No truck selected"} · {Math.round(travelProgress * 100)}% complete · {routePosition[0].toFixed(4)}, {routePosition[1].toFixed(4)} · GPS updates every 2 seconds</p></div>
         </section>

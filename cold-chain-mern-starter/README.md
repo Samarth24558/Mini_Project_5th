@@ -6,7 +6,7 @@ MERN application for refrigerated fleet operations. It builds on the supplied pr
 
 1. **Fleet & shipment management** — truck registration, shipment creation, truck assignment, shipment status and delivery milestones.
 2. **Temperature / telemetry monitoring** — temperature, humidity, door, fuel, brake and GPS fields; per-shipment history, latest readings and authenticated server-sent live telemetry events.
-3. **Sensor and truck-travel simulation** — fleet managers can prepare 20 marked demo truck/shipment pairs from the Fleet directory before running a simulation. Demo shipments use varied routes; each run randomly selects one truck (avoiding the previous truck where possible) and updates only that shipment to the route being simulated. It displays the selected truck on an OpenStreetMap map with a vertical route-progress graph and posts GPS/sensor telemetry every two seconds. Each run generates temperature, door-open and brake alerts for its selected truck; the live alert list identifies the truck, route and incident type. Simulated records are marked `isSimulated: true`.
+3. **Sensor and truck-travel simulation** — fleet managers can prepare 20 marked demo truck/shipment pairs from the Fleet directory before running a simulation. Demo shipments use varied routes; each run randomly selects one truck (avoiding the previous truck where possible) and updates only that shipment to the route being simulated. It displays the selected truck on an OpenStreetMap map with a vertical route-progress graph and posts GPS/sensor telemetry every two seconds. Each run generates exactly four alerts for its selected truck: temperature breach, low fuel, brake problem, and simulated accident, routed to their respective response teams. Simulated records are marked `isSimulated: true`.
 4. **Automatic incident detection** — configurable temperature range, sustained open-door, low-fuel and brake warning/failure detection. Every qualifying telemetry reading creates one incident per event type, including repeated alerts across readings for the same shipment.
 5. **Alerts** — dashboard alert records and optional Gmail notifications to the assigned team's contact email.
 6. **GPS visibility** — latitude/longitude saved with telemetry and links to open coordinates in Google Maps.
@@ -154,8 +154,8 @@ All `/api` business routes require a valid Clerk session.
 - Fuel below `LOW_FUEL_THRESHOLD` creates a low-fuel incident.
 - Brake warning/failure creates a brake incident.
 - Repeated qualifying readings are not deduplicated; each reading creates a separate incident and dashboard alert. A full demo fleet run creates 60 alerts (three alert types for each of 20 trucks). Configure notification email accordingly.
-- An active team matching the alert type is assigned automatically; if none exists, the first active team is used as a fallback.
-- Email is attempted only when Gmail credentials and a team contact email exist. Dashboard alerts remain stored when email is not configured.
+- An active team matching the alert type is assigned automatically. Alerts are emailed only to that team's configured email; if no matching active team or email exists, the alert remains in the dashboard without being emailed.
+- Email is attempted when Gmail credentials and recipients are configured. Dashboard alerts remain stored when email is not configured.
 - Response status follows `new → active/acknowledged → in progress → resolved → closed`; each state change, assignment, alert, and incident record is persisted together in a MongoDB transaction.
 
 ## Sprint 2 implementation and verification

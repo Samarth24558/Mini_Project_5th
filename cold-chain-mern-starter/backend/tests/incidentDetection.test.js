@@ -43,6 +43,11 @@ test("simulation alert readings cover temperature, door and brake incidents", ()
   assert.deepEqual([temperature[0]?.type, door[0]?.type, brake[0]?.type], ["temperature_breach", "door_open", "brake_problem"]);
 });
 
+test("simulated accident readings create an emergency response incident only when flagged", () => {
+  assert.equal(classifyTelemetry({ isSimulated: true, accidentDetected: true })[0]?.type, "accident");
+  assert.deepEqual(classifyTelemetry({ isSimulated: false, accidentDetected: true }), []);
+});
+
 test("temperature thresholds are inclusive and critical severity starts beyond three degrees", () => {
   const options = { minTemp: 2, maxTemp: 8, doorOpenThresholdSeconds: 300 };
   assert.equal(classifyTelemetry({ temperature: 2 }, options).length, 0);

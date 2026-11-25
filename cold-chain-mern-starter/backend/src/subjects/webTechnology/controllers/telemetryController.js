@@ -13,15 +13,10 @@ import { publishTelemetryEvent } from "../services/telemetryEvents.js";
 import { deleteTelemetryBranch, deleteUploadBranch, withDeletionTransaction, withMongoTransaction } from "../../dbms/recordDeletion.js";
 import { runBoundedWorkers } from "../../os/boundedWorkers.js";
 import { replayTelemetryBatch } from "../../dsa/telemetryReplay.js";
+import { getDefaultSimulationRoute } from "../../dsa/simulationRoutes.js";
 
 const SIMULATION_FLEET_SIZE = 20;
 const SIMULATION_BATCH_SIZE = 1;
-const DEFAULT_SIMULATION_ROUTES = [
-  { origin: "Bengaluru", destination: "Mysuru" },
-  { origin: "Chennai", destination: "Bengaluru" },
-  { origin: "Hyderabad", destination: "Vijayawada" },
-  { origin: "Mumbai", destination: "Pune" }
-];
 
 function validOptionalNumber(value, min, max) {
   if (value === undefined || value === null || value === "") return true;
@@ -48,6 +43,7 @@ async function saveReading(input, uploadId = null, sourceRowNumber = null, evalu
     doorStatus: input.doorStatus || "unknown",
     fuelLevel: input.fuelLevel === "" || input.fuelLevel == null ? null : Number(input.fuelLevel),
     brakeStatus: input.brakeStatus || "unknown",
+    accidentDetected: input.accidentDetected === true,
     location: input.location || {},
     sourceData: input.sourceData || null,
     isSimulated: input.isSimulated ?? false
@@ -108,7 +104,7 @@ export async function createSimulationFleet(req, res) {
         { $set: { simulationKey, driverName: `Simulation Driver ${suffix}`, plateNo: `SIM-DEMO-${suffix}`, capacityKg: 10000, status: "active", isSimulated: true } },
         { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
       );
-      const defaultRoute = DEFAULT_SIMULATION_ROUTES[(index - 1) % DEFAULT_SIMULATION_ROUTES.length];
+      const defaultRoute = getDefaultSimulationRoute(index - 1);
       const shipment = await Shipment.findOneAndUpdate(
         { simulationKey },
         {
@@ -138,9 +134,9 @@ export async function createSimulationFleet(req, res) {
       if (!shipment) return res.status(404).json({ success: false, message: "Demo shipment not found for the selected truck" });
       selectedTruck.origin = shipment.origin;
       selectedTruck.destination = shipment.destination;
-    } else if (new Set(data.map(shipment => `${shipment.origin}\u0000${shipment.destination}`)).size === 1) {
+    } else {
       for (let index = 0; index < data.length; index += 1) {
-        const route = DEFAULT_SIMULATION_ROUTES[index % DEFAULT_SIMULATION_ROUTES.length];
+        const route = getDefaultSimulationRoute(index);
         const shipment = await Shipment.findOneAndUpdate(
           { _id: data[index].shipmentId, simulationKey: { $exists: true }, isSimulated: true },
           { $set: route },
@@ -174,6 +170,7 @@ export async function createSimulationTelemetryBatch(req, res) {
       if (reading.temperature != null && !Number.isFinite(Number(reading.temperature))) return res.status(400).json({ success: false, message: "Temperature must be numeric" });
       if (!validOptionalNumber(reading.humidity, 0, 100)) return res.status(400).json({ success: false, message: "Humidity must be between 0 and 100" });
       if (!validOptionalNumber(reading.fuelLevel, 0, 100)) return res.status(400).json({ success: false, message: "Fuel level must be between 0 and 100" });
+      if (reading.accidentDetected != null && typeof reading.accidentDetected !== "boolean") return res.status(400).json({ success: false, message: "Accident detected must be a boolean" });
     }
 
     const shipments = await Shipment.find({ _id: { $in: shipmentIds }, isSimulated: true }).populate("truckId", "plateNo driverName");
